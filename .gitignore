@@ -1,0 +1,4 @@
+.gt_server_state.json
+.gt_server_state.json.tmp
+__pycache__/
+*.pyc

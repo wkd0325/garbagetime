@@ -1,0 +1,2868 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<script>
+  // 테마 깜빡임(FOUC) 방지: React 마운트 전에 저장된 테마 적용
+  try {
+    var _gt = localStorage.getItem('gt_theme') === 'light' ? 'light' : 'dark';
+    document.documentElement.classList.toggle('light', _gt === 'light');
+    document.documentElement.setAttribute('data-theme', _gt);
+  } catch (e) {}
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#121212" id="meta-theme" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="description" content="가비지타임 - 아마추어 농구 소셜 매칭 & 데이터 기반 티어 플랫폼" />
+<title>가비지타임 매니저 콘솔 · ADMIN</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- 카카오/다음 우편번호 · 도로명 주소 검색 SDK -->
+<script src="//t1.daum.cdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Black+Han+Sans&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        // 테마 대응: CSS 변수 기반 컬러 (html.light 에서 일괄 전환)
+        //  - white  : 전경(텍스트/보더/틴트) 색. 다크=흰색, 라이트=다크 슬레이트(#0F172A / #111827)
+        //  - pure   : 테마와 무관한 순백색 (컬러 배지 위 텍스트 등)
+        colors: {
+          white: 'rgb(var(--c-fg) / <alpha-value>)',
+          pure: '#FFFFFF',
+          ink: 'rgb(var(--c-ink) / <alpha-value>)',
+          panel: 'rgb(var(--c-panel) / <alpha-value>)',
+          panel2: 'rgb(var(--c-panel2) / <alpha-value>)',
+          brand: '#FF5500',
+          neon: 'rgb(var(--c-neon) / <alpha-value>)',
+          teamb: 'rgb(var(--c-teamb) / <alpha-value>)',
+        },
+        fontFamily: {
+          sans: ['"Pretendard Variable"', 'Pretendard', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { background: rgb(var(--c-shell)); -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+  body { font-family: "Pretendard Variable", Pretendard, system-ui, sans-serif; }
+  .font-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: .03em; }
+  .font-hans { font-family: 'Black Han Sans', sans-serif; }
+  .court-bg {
+    background-color: rgb(var(--c-ink));
+    background-image:
+      radial-gradient(ellipse 80% 45% at 50% -10%, rgba(255, 85, 0, .16), transparent 60%),
+      linear-gradient(rgb(var(--c-fg) / .022) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--c-fg) / .022) 1px, transparent 1px);
+    background-size: 100% 100%, 28px 28px, 28px 28px;
+    background-attachment: fixed;
+  }
+  .glow-orange { box-shadow: 0 0 0 1px rgba(255, 85, 0, .55), 0 10px 30px -10px rgba(255, 85, 0, .7); }
+  .glow-neon { box-shadow: 0 0 0 1px rgba(0, 255, 102, .45), 0 10px 30px -10px rgba(0, 255, 102, .55); }
+  .text-glow-orange { text-shadow: 0 0 18px rgba(255, 85, 0, .65); }
+  .text-glow-neon { text-shadow: 0 0 18px rgba(0, 255, 102, .55); }
+  .text-glow-cyan { text-shadow: 0 0 18px rgba(34, 211, 238, .55); }
+
+  @keyframes foulPulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, .7), 0 0 0 0 rgba(239, 68, 68, .4); }
+    50% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 1), 0 0 24px 2px rgba(239, 68, 68, .45); }
+  }
+  .foul-alert { animation: foulPulse 1.1s ease-in-out infinite; }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, 0) scale(.6); }
+    20% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
+    100% { opacity: 0; transform: translate(-50%, -46px) scale(1); }
+  }
+  .float-up { animation: floatUp .85s ease-out forwards; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+  .shake { animation: shake .4s; }
+  @keyframes slideUp { from { transform: translateY(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .slide-up { animation: slideUp .3s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .fade-in { animation: fadeIn .2s ease-out; }
+  @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+  .pop-in { animation: popIn .6s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes scoreBump { 0% { transform: scale(1); } 40% { transform: scale(1.18); } 100% { transform: scale(1); } }
+  .score-bump { animation: scoreBump .35s ease-out; }
+  @keyframes spinSlow { to { transform: rotate(360deg); } }
+  .spin-slow { animation: spinSlow 1.2s linear infinite; }
+  @keyframes shine { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .shine { background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.12) 50%, transparent 70%); background-size: 200% 100%; animation: shine 2.6s linear infinite; }
+  .stat-btn { transition: transform .08s ease, filter .15s ease, background-color .15s ease; touch-action: manipulation; user-select: none; }
+  .stat-btn:active { transform: scale(.9); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 6px); }
+  input, select, textarea { color-scheme: dark; }
+  input[type=range] { accent-color: #FF5500; }
+  ::selection { background: rgba(255, 85, 0, .4); }
+  #boot { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; color: #aaa; font-size: 13px; }
+
+  /* ---------- Theme tokens (Admin Console: dark default / bg-slate-50 #F8FAFC light) ---------- */
+  :root {
+    --c-fg: 255 255 255; --c-ink: 18 18 18; --c-panel: 30 30 30; --c-panel2: 38 38 38;
+    --c-neon: 0 255 102; --c-teamb: 34 211 238; --c-shell: 18 18 18;
+  }
+  html.light, html[data-theme="light"] {
+    --c-fg: 15 23 42; --c-ink: 248 250 252; --c-panel: 255 255 255; --c-panel2: 241 245 249;
+    --c-neon: 0 168 72; --c-teamb: 8 145 178; --c-shell: 248 250 252;
+  }
+  html.light input, html.light select, html.light textarea,
+  html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme="light"] textarea { color-scheme: light; }
+  html.light .rounded-2xl.bg-panel, html.light .rounded-3xl.bg-panel,
+  html[data-theme="light"] .rounded-2xl.bg-panel, html[data-theme="light"] .rounded-3xl.bg-panel {
+    border-color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .06), 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  html.light .border-white\/\[\.06\], html.light .border-white\/\[\.07\], html.light .border-white\/5, html.light .border-white\/10,
+  html[data-theme="light"] .border-white\/\[\.06\], html[data-theme="light"] .border-white\/\[\.07\], html[data-theme="light"] .border-white\/5, html[data-theme="light"] .border-white\/10 { border-color: #E2E8F0; }
+  html.light .text-yellow-300, html[data-theme="light"] .text-yellow-300 { color: #B45309; }
+  html.light .text-red-300, html.light .text-red-400, html[data-theme="light"] .text-red-300, html[data-theme="light"] .text-red-400 { color: #DC2626; }
+  html.light .text-slate-300, html[data-theme="light"] .text-slate-300 { color: #475569; }
+  html.light .text-sky-400, html[data-theme="light"] .text-sky-400 { color: #0284C7; }
+  html.light .text-glow-neon, html.light .text-glow-orange, html.light .text-glow-cyan,
+  html[data-theme="light"] .text-glow-neon, html[data-theme="light"] .text-glow-orange, html[data-theme="light"] .text-glow-cyan { text-shadow: none; }
+  html.light .court-bg, html[data-theme="light"] .court-bg {
+    background-color: #F8FAFC;
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(255, 85, 0, .08), transparent 60%),
+      linear-gradient(rgba(15, 23, 42, .03) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, .03) 1px, transparent 1px);
+  }
+  html, body { transition: background-color .25s ease; }
+  .boot-error { color: #FF5500; padding: 20px; text-align: left; max-width: 640px; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body class="text-white antialiased">
+<div id="root">
+  <div id="boot">
+    <svg width="56" height="56" viewBox="0 0 64 64" class="spin-slow"><circle cx="32" cy="32" r="29" fill="#FF5500"/><g fill="none" stroke="#121212" stroke-width="3.2"><path d="M3 32h58"/><path d="M32 3v58"/><path d="M11 11c8 6 12 13 12 21s-4 15-12 21"/><path d="M53 11c-8 6-12 13-12 21s4 15 12 21"/></g></svg>
+    <div>매니저 콘솔을 준비하는 중...</div>
+  </div>
+</div>
+
+<script>
+  // 런타임/컴파일 오류 시 로딩 화면에 멈추지 않고 원인을 표시
+  window.addEventListener('error', function (e) {
+    var b = document.getElementById('boot');
+    if (b) b.innerHTML = '<div class="boot-error"><b>실행 오류가 발생했습니다</b>\n\n' + String((e && e.message) || e) + '</div>';
+  });
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useReducer, useContext, createContext, useMemo, useRef, useCallback } = React;
+
+/* =====================================================================
+ * 0. ICON (Lucide UMD → React)
+ * ===================================================================== */
+function Icon({ name, size = 18, className = '', strokeWidth = 2, fill = 'none', style }) {
+  const lib = window.lucide && (window.lucide.icons || window.lucide);
+  const ALIAS = {
+    UserPen: ['UserPen', 'UserCog', 'SquarePen', 'Pencil', 'Edit3', 'User'],
+    Edit3: ['Edit3', 'SquarePen', 'Pencil', 'Edit2', 'PenLine'],
+    MapPinned: ['MapPinned', 'MapPin', 'Map'],
+    Infinity: ['Infinity', 'Sparkles', 'Flame'],
+  };
+  let node = lib && lib[name];
+  if ((!node || !Array.isArray(node)) && lib && ALIAS[name]) {
+    for (const k of ALIAS[name]) { if (lib[k] && Array.isArray(lib[k])) { node = lib[k]; break; } }
+  }
+  if (!node || !Array.isArray(node)) {
+    return <span className={className} style={{ display: 'inline-block', width: size, height: size, ...style }} />;
+  }
+  const children = node[0] === 'svg' ? node[2] || [] : node;
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={fill}
+      stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      className={`shrink-0 ${className}`} style={style} aria-hidden="true">
+      {children.map((c, i) => {
+        const [tag, attrs] = c;
+        const { key, ...rest } = attrs || {};
+        return React.createElement(tag, { ...rest, key: i });
+      })}
+    </svg>
+  );
+}
+
+function BallLogo({ size = 40, className = '' }) {
+  return (
+    <svg viewBox="0 0 64 64" width={size} height={size} className={className}>
+      <circle cx="32" cy="32" r="29" fill="#FF5500" />
+      <g fill="none" stroke="#121212" strokeWidth="3.2" strokeLinecap="round">
+        <circle cx="32" cy="32" r="29" />
+        <path d="M3 32h58" /><path d="M32 3v58" />
+        <path d="M11 11c8 6 12 13 12 21s-4 15-12 21" />
+        <path d="M53 11c-8 6-12 13-12 21s4 15 12 21" />
+      </g>
+    </svg>
+  );
+}
+
+/* =====================================================================
+ * 1. DOMAIN CONSTANTS
+ * ===================================================================== */
+const STORAGE_KEY = 'garbagetime_state_v2';
+const ADMIN_PIN = '1234';
+const DAY = 86400000;
+
+const STAT_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf'];
+const STAT_LABEL = { pts: 'PTS', reb: 'REB', ast: 'AST', stl: 'STL', blk: 'BLK', tov: 'TOV', pf: 'PF' };
+const STAT_KO = { pts: '득점', reb: '리바운드', ast: '어시스트', stl: '스틸', blk: '블록', tov: '턴오버', pf: '파울' };
+const emptyStats = () => ({ pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0 });
+const emptyTotals = () => ({ gp: 0, wins: 0, losses: 0, draws: 0, abei: 0, ...emptyStats() });
+
+const POSITIONS = {
+  G:  { id: 'G',  name: '가드',       en: 'GUARD',          desc: '볼 핸들링 · 경기 운영 · 외곽슛', icon: 'Zap',       color: '#FFB020', group: 'G' },
+  F:  { id: 'F',  name: '포워드',     en: 'FORWARD',        desc: '돌파 · 미드레인지 · 다재다능',   icon: 'Flame',     color: '#00FF66', group: 'F' },
+  C:  { id: 'C',  name: '센터',       en: 'CENTER',         desc: '골밑 장악 · 리바운드 · 블록',     icon: 'Shield',    color: '#A78BFA', group: 'C' },
+  PG: { id: 'PG', name: '포인트 가드', en: 'POINT GUARD',    desc: '볼 핸들링 · 패스 · 경기 조율',   icon: 'Zap',       color: '#FFB020', group: 'G' },
+  SG: { id: 'SG', name: '슈팅 가드',   en: 'SHOOTING GUARD', desc: '외곽 3점슛 · 돌파 · 주득점원',   icon: 'Crosshair', color: '#F97316', group: 'G' },
+  SF: { id: 'SF', name: '스몰 포워드', en: 'SMALL FORWARD',  desc: '공수 겸장 · 윙 플레이 · 속공',   icon: 'Flame',     color: '#00FF66', group: 'F' },
+  PF: { id: 'PF', name: '파워 포워드', en: 'POWER FORWARD',  desc: '스크린 · 미드레인지 · 리바운드', icon: 'Dumbbell',  color: '#10B981', group: 'F' },
+};
+const ONBOARD_POSITIONS = [POSITIONS.G, POSITIONS.F, POSITIONS.C];
+const DETAIL_POSITIONS = [POSITIONS.PG, POSITIONS.SG, POSITIONS.SF, POSITIONS.PF, POSITIONS.C];
+
+const TIERS = [
+  { id: 'rookie', name: '루키', en: 'ROOKIE', min: 0, color: '#A3A3A3' },
+  { id: 'beginner', name: '비기너', en: 'BEGINNER', min: 1030, color: '#38BDF8' },
+  { id: 'amateur', name: '아마추어', en: 'AMATEUR', min: 1150, color: '#00FF66' },
+  { id: 'pro', name: '프로', en: 'PRO', min: 1300, color: '#FF5500' },
+  { id: 'master', name: '마스터', en: 'MASTER', min: 1500, color: '#E879F9' },
+];
+const getTier = (r) => [...TIERS].reverse().find((t) => r >= t.min) || TIERS[0];
+const getNextTier = (r) => TIERS.find((t) => t.min > r) || null;
+const tierIndex = (id) => TIERS.findIndex((t) => t.id === id);
+
+const REGIONS = {
+  '서울특별시': ['강남구', '마포구', '송파구', '성동구', '관악구', '노원구', '영등포구'],
+  '세종특별자치시': ['조치원읍', '보람동', '나성동', '도담동', '아름동', '고운동'],
+  '대전광역시': ['유성구', '서구', '중구', '동구', '대덕구'],
+  '경기도': ['성남시 분당구', '수원시 영통구', '고양시 일산동구', '용인시 수지구', '화성시'],
+  '부산광역시': ['해운대구', '수영구', '부산진구', '남구'],
+  '인천광역시': ['연수구', '남동구', '부평구'],
+};
+
+const COURTS = [
+  { name: '고려대 세종캠퍼스 체육관', city: '세종특별자치시', address: '세종특별자치시 조치원읍 세종로 2511' },
+  { name: '세종 보람동 실내체육관', city: '세종특별자치시', address: '세종특별자치시 보람서로 55' },
+  { name: '대전 유성구 국민체육센터', city: '대전광역시', address: '대전광역시 유성구 유성대로 807번길 19' },
+  { name: '서울 성수 언더스탠드에비뉴 코트', city: '서울특별시', address: '서울특별시 성동구 왕십리로 63' },
+  { name: '서울 반포 한강공원 농구장', city: '서울특별시', address: '서울특별시 서초구 신반포로11길 40' },
+  { name: '분당 탄천종합운동장 보조체육관', city: '경기도', address: '경기도 성남시 분당구 탄천로 215' },
+  { name: '부산 사직실내체육관 보조경기장', city: '부산광역시', address: '부산광역시 동래구 사직로 45' },
+];
+const CUSTOM_COURTS_KEY = 'gt_custom_courts';
+const MAX_PLAYER_OPTIONS = [
+  { value: 10, label: '10명 (5:5 정규)' },
+  { value: 12, label: '12명 (교체 2명)' },
+  { value: 15, label: '15명 (교체 5명 / 3파전)' },
+  { value: 18, label: '18명 (6:6 or 3팀 풀로테이션)' },
+  { value: 24, label: '24명 (4팀 토너먼트)' },
+  { value: 0,  label: '0 (인원 제한 없음 · 오픈런/이벤트)' },
+];
+const MANAGERS = ['김가비 매니저', '박타임 매니저', '이농구 매니저', '최덩크 매니저'];
+const REC_TIERS = ['전체 티어', '루키 ~ 비기너', '비기너 ~ 아마추어', '아마추어 ~ 프로', '프로 이상'];
+const FORMATS = {
+  '5vs5 풀코트': { onCourt: 5, min: 10, max: 15, def: 12 },
+  '3vs3 하프코트': { onCourt: 3, min: 6, max: 10, def: 8 },
+};
+const JERSEYS = [0, 1, 3, 7, 8, 11, 13, 23, 24, 30, 33, 35, 77];
+
+const BADGES = {
+  commander: { label: '🎯 코트 위의 지휘자', desc: '경기당 어시스트 4개 이상', color: '#38BDF8' },
+  thief: { label: '⚡ 코트 위의 대도', desc: '경기당 스틸 2개 이상', color: '#FACC15' },
+  rebounder: { label: '🦍 골밑의 지배자', desc: '경기당 리바운드 7개 이상', color: '#A78BFA' },
+  rim: { label: '🧱 림 프로텍터', desc: '경기당 블록 1.5개 이상', color: '#94A3B8' },
+  scorer: { label: '🔥 득점 기계', desc: '경기당 15득점 이상', color: '#FF5500' },
+  fighter: { label: '🥊 코트 위의 파이터', desc: '경기당 파울 3.5개 이상', color: '#EF4444' },
+  allround: { label: '👑 육각형 올라운더', desc: '득점·패스·리바운드·수비·안정성 모두 50점 이상', color: '#00FF66' },
+};
+
+/* =====================================================================
+ * 2. UTILS
+ * ===================================================================== */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const genId = (p = 'id') => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+const pad2 = (n) => String(n).padStart(2, '0');
+const fmtShort = (ts) => { const d = new Date(ts); return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`; };
+const fmtTime = (ts) => { const d = new Date(ts); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const fmtDateFull = (ts) => { const d = new Date(ts); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DOW[d.getDay()]}) ${fmtTime(ts)}`; };
+const fmtWon = (n) => `${Number(n).toLocaleString('ko-KR')}원`;
+const signed = (n) => (n > 0 ? `+${n}` : `${n}`);
+const vibrate = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+
+// 생년월일(YYYY-MM-DD) 기준 현재 만 나이 계산 유틸 함수
+function calcAge(birthDate, fallbackAge = 27) {
+  if (!birthDate || typeof birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
+    return typeof fallbackAge === 'number' && !isNaN(fallbackAge) ? fallbackAge : 27;
+  }
+  const [y, m, d] = birthDate.trim().split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  const mDiff = (now.getMonth() + 1) - m;
+  if (mDiff < 0 || (mDiff === 0 && now.getDate() < d)) age -= 1;
+  return clamp(age, 0, 120);
+}
+window.calcAge = calcAge;
+
+// 인원 무제한(오픈런/이벤트) 매치 판별 유틸
+const isUnlimitedMatch = (m) => Boolean(m && (m.isUnlimited || Number(m.maxPlayers) === 0));
+
+// 매니저가 직접 개설한 신규 매치 판별 유틸 (로비 최상단 우선 노출용)
+const SEED_MATCH_IDS = new Set(['m_1', 'm_2', 'm_3', 'm_4']);
+const isManagerMatch = (m) => Boolean(m && (m.isManagerCreated || !SEED_MATCH_IDS.has(m.id)));
+const MANAGER_MATCHES_KEY = 'gt_manager_matches_v2';
+const DELETED_MATCHES_KEY = 'gt_deleted_matches_v2';
+const SESSION_KEY = 'gt_my_session_v2';
+const LAST_KAKAO_UID_KEY = 'gt_last_kakao_uid_v2';
+
+// 기기별 독립 로그인 세션 로드/저장 (전역 공유 상태와 완전 분리)
+function loadMySession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return { auth: null, meId: null };
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return { auth: parsed.auth || null, meId: parsed.meId || null };
+    }
+  } catch (e) {}
+  return { auth: null, meId: null };
+}
+
+function saveMySession(auth, meId) {
+  try {
+    if (!auth) {
+      localStorage.removeItem(SESSION_KEY);
+    } else {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ auth, meId: meId || null }));
+    }
+  } catch (e) {}
+}
+
+function genUserId() {
+  return `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function loadManagerMatches() {
+  try {
+    const raw = localStorage.getItem(MANAGER_MATCHES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+
+function saveManagerMatches(matches) {
+  try {
+    const mgr = (matches || []).filter((m) => isManagerMatch(m));
+    localStorage.setItem(MANAGER_MATCHES_KEY, JSON.stringify(mgr));
+  } catch (e) {}
+}
+
+function loadDeletedMatchIds() {
+  try {
+    const raw = localStorage.getItem(DELETED_MATCHES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+
+function saveDeletedMatchIds(ids) {
+  try {
+    localStorage.setItem(DELETED_MATCHES_KEY, JSON.stringify(Array.from(new Set(ids || []))));
+  } catch (e) {}
+}
+
+// 카카오 우편번호 data.sido → REGIONS 시/도 키 자동 매핑
+function parseSidoToCity(sido = '', address = '') {
+  const s = `${sido} ${address}`;
+  if (s.includes('세종')) return '세종특별자치시';
+  if (s.includes('서울')) return '서울특별시';
+  if (s.includes('대전')) return '대전광역시';
+  if (s.includes('경기')) return '경기도';
+  if (s.includes('부산')) return '부산광역시';
+  if (s.includes('인천')) return '인천광역시';
+  return Object.keys(REGIONS)[0];
+}
+
+function loadCustomCourts() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_COURTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+
+function getAllCourts(state) {
+  const custom = (state && Array.isArray(state.customCourts) ? state.customCourts : loadCustomCourts());
+  const seen = new Set(COURTS.map((c) => c.name));
+  const list = [...COURTS];
+  custom.forEach((c) => {
+    if (c && c.name && !seen.has(c.name)) { seen.add(c.name); list.push(c); }
+  });
+  return list;
+}
+
+function getCourtAddress(m, state) {
+  if (!m) return '';
+  if (m.address && m.address.trim()) return m.address.trim();
+  const all = getAllCourts(state);
+  const found = all.find((c) => c.name === m.court || (m.court && c.name.includes(m.court)));
+  if (found && found.address) return found.address;
+  return m.region ? `${m.region} ${m.court || ''}`.trim() : (m.court || '');
+}
+
+function openNaverMap(query) {
+  if (!query) return;
+  window.open(`https://map.naver.com/v5/search/${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
+}
+
+function openKakaoMap(query) {
+  if (!query) return;
+  window.open(`https://map.kakao.com/link/search/${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
+}
+
+function copyAddress(addr, toast) {
+  if (!addr) return;
+  const done = () => toast && toast('주소가 복사되었습니다 📋', 'success');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(addr).then(done).catch(done);
+      return;
+    }
+  } catch (e) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = addr;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  } catch (e) {}
+  done();
+}
+/* =====================================================================
+ * 3. CORE ALGORITHM ENGINE  (ABEi + TrueSkill-style dynamic rating)
+ * ===================================================================== */
+// [1] ABEi = PTS + 1.5*REB + 2.0*AST + 2.0*STL + 2.0*BLK - 2.0*TOV - 1.0*PF
+const calcABEi = (s) => s.pts + 1.5 * s.reb + 2.0 * s.ast + 2.0 * s.stl + 2.0 * s.blk - 2.0 * s.tov - 1.0 * s.pf;
+
+// [2] weight = 개인 ABEi / 팀 평균 ABEi  (0.5 ~ 1.5 클리핑)
+function calcWeight(abei, teamAvg) {
+  if (teamAvg > 0) return clamp(abei / teamAvg, 0.5, 1.5);
+  // 팀 평균이 0 이하인 극단 케이스(전원 부진) → 평균 대비 차이 기반 보정
+  return clamp(1 + (abei - teamAvg) / 10, 0.5, 1.5);
+}
+
+// [3] 레이팅 변동: 승리 = +25 × weight / 패배 = -20 ÷ weight / 무승부 = (weight-1)×10
+const BASE_WIN = 25, BASE_LOSS = 20;
+function calcDelta(result, weight) {
+  if (result === 'W') return Math.round(BASE_WIN * weight);
+  if (result === 'L') return -Math.round(BASE_LOSS / weight);
+  return Math.round((weight - 1) * 10);
+}
+
+// 레이더 차트 6축 (0~100 정규화)
+const RADAR_AXES = ['득점력', '패스', '리바운드', '수비력', '안정성', '효율(ABEi)'];
+function radarScores(t) {
+  if (!t || !t.gp) return [0, 0, 0, 0, 0, 0];
+  const a = (k) => t[k] / t.gp;
+  return [
+    clamp((a('pts') / 20) * 100, 0, 100),
+    clamp((a('ast') / 6) * 100, 0, 100),
+    clamp((a('reb') / 10) * 100, 0, 100),
+    clamp(((a('stl') + a('blk')) / 4) * 100, 0, 100),
+    clamp(100 - ((a('tov') + a('pf')) / 8) * 100, 0, 100),
+    clamp((t.abei / t.gp / 30) * 100, 0, 100),
+  ].map((v) => Math.round(v));
+}
+
+// [4] 동적 칭호 부여
+function computeBadges(t) {
+  if (!t || !t.gp) return [];
+  const a = (k) => t[k] / t.gp;
+  const b = [];
+  if (a('ast') >= 4) b.push('commander');
+  if (a('stl') >= 2) b.push('thief');
+  if (a('reb') >= 7) b.push('rebounder');
+  if (a('blk') >= 1.5) b.push('rim');
+  if (a('pts') >= 15) b.push('scorer');
+  if (a('pf') >= 3.5) b.push('fighter');
+  const r = radarScores(t);
+  if (r.slice(0, 5).every((v) => v >= 50)) b.unshift('allround');
+  return b;
+}
+
+// 경기 종료 → 전체 파이프라인 실행
+function runEngine(state, matchId) {
+  const m = state.matches.find((x) => x.id === matchId);
+  if (!m || !m.live) return state;
+  const { teams, stats } = m.live;
+  const teamScore = (t) => teams[t].reduce((s, id) => s + stats[id].pts, 0);
+  const scoreA = teamScore('A'), scoreB = teamScore('B');
+  const winner = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : 'D';
+  const users = { ...state.users };
+  const rows = [];
+  const teamAvgs = {};
+
+  ['A', 'B'].forEach((t) => {
+    const ids = teams[t];
+    const abeis = ids.map((id) => calcABEi(stats[id]));
+    // 유동 인원 대응: 실제 출전 팀 인원수(team_players.length)로 나눔
+    const teamAvg = ids.length ? abeis.reduce((a, b) => a + b, 0) / ids.length : 0;
+    teamAvgs[t] = teamAvg;
+    ids.forEach((id, i) => {
+      const u = users[id];
+      if (!u) return;
+      const abei = abeis[i];
+      const weight = calcWeight(abei, teamAvg);
+      const result = winner === 'D' ? 'D' : winner === t ? 'W' : 'L';
+      const delta = calcDelta(result, weight);
+      const before = u.rating;
+      const after = Math.max(0, before + delta);
+      const totals = { ...emptyTotals(), ...u.totals };
+      totals.gp += 1;
+      if (result === 'W') totals.wins += 1; else if (result === 'L') totals.losses += 1; else totals.draws += 1;
+      STAT_KEYS.forEach((k) => (totals[k] += stats[id][k]));
+      totals.abei += abei;
+      const game = {
+        matchId, title: m.title, court: m.court, date: m.datetime, team: t, result,
+        stats: { ...stats[id] }, abei, teamAvg, weight, delta, before, after,
+        score: { A: scoreA, B: scoreB }, teamSize: ids.length,
+      };
+      users[id] = {
+        ...u,
+        rating: after,
+        lastDelta: delta,
+        sigma: Math.max(1.5, +(u.sigma * 0.92).toFixed(2)),
+        totals,
+        badges: computeBadges(totals),
+        history: [...u.history, { label: fmtShort(m.datetime), rating: after, delta, matchId }],
+        games: [game, ...(u.games || [])].slice(0, 40), updatedAt: Date.now(),
+      };
+      rows.push({ id, nickname: u.nickname, position: u.position, ...game, tierBefore: getTier(before).id, tierAfter: getTier(after).id });
+    });
+  });
+
+  const result = { scoreA, scoreB, winner, rows, teamAvgs, submittedAt: Date.now() };
+  const inMatch = teams.A.includes(state.meId) || teams.B.includes(state.meId);
+  return {
+    ...state,
+    users,
+    matches: state.matches.map((x) => (x.id === matchId ? { ...x, status: 'finished', result, updatedAt: Date.now() } : x)),
+    reveal: { matchId, at: Date.now() },
+  };
+}
+
+/* =====================================================================
+ * 4. SEED DATA
+ * ===================================================================== */
+function createSeed() {
+  const rnd = mulberry32(20261016);
+  const R = (a, b) => a + rnd() * (b - a);
+  const RI = (a, b) => Math.round(R(a, b));
+  const now = Date.now();
+  const names = ['덩크왕민수', '세종조던', '골밑청소부', '야간슈터', '픽앤롤장인', '3점난사범', '코트의여우', '블록장인',
+    '허슬플레이어', '미드레인지킹', '패스마스터', '풀코트프레스', '캐치앤슛', '포스트업장인', '스텝백요정', '리바운드머신', '앤드원헌터', '노룩패스'];
+  const prof = {
+    G: { pts: 12, reb: 3, ast: 5, stl: 1.9, blk: 0.3, tov: 2.2, pf: 2.1 },
+    F: { pts: 13, reb: 6, ast: 2.6, stl: 1.2, blk: 0.8, tov: 1.8, pf: 2.6 },
+    C: { pts: 10, reb: 8.5, ast: 1.5, stl: 0.6, blk: 1.8, tov: 1.6, pf: 3.2 },
+  };
+  const cities = Object.keys(REGIONS);
+  const users = {};
+  names.forEach((name, i) => {
+    const pos = ['G', 'F', 'C'][i % 3];
+    const id = `bot_${i + 1}`;
+    const gp = RI(4, 14);
+    const totals = emptyTotals();
+    totals.gp = gp;
+    totals.wins = RI(Math.floor(gp * 0.3), Math.ceil(gp * 0.7));
+    totals.losses = gp - totals.wins;
+    STAT_KEYS.forEach((k) => (totals[k] = Math.round(prof[pos][k] * R(0.55, 1.45) * gp)));
+    totals.abei = calcABEi(totals);
+    const rating = RI(985, 1430);
+    const histLen = Math.min(gp, 9);
+    const deltas = Array.from({ length: histLen }, () => RI(-22, 36));
+    let r = rating - deltas.reduce((a, b) => a + b, 0);
+    const history = [{ label: '시작', rating: r, delta: 0 }];
+    deltas.forEach((d, j) => { r += d; history.push({ label: fmtShort(now - (histLen - j) * 3 * DAY), rating: r, delta: d }); });
+    const city = i % 2 === 0 ? '세종특별자치시' : cities[RI(0, cities.length - 1)];
+    const bYear = RI(1989, 2004);
+    const birthDate = `${bYear}-${pad2(RI(1, 12))}-${pad2(RI(1, 28))}`;
+    const gender = i % 5 === 0 ? 'F' : 'M';
+    users[id] = {
+      id, nickname: name, position: pos, isBot: true, gender, birthDate, age: calcAge(birthDate),
+      height: pos === 'C' ? RI(186, 199) : pos === 'F' ? RI(180, 191) : RI(169, 183),
+      weight: pos === 'C' ? RI(85, 102) : pos === 'F' ? RI(74, 88) : RI(63, 78),
+      city, district: REGIONS[city][RI(0, REGIONS[city].length - 1)],
+      rating, sigma: +Math.max(1.5, 8.33 * Math.pow(0.92, gp)).toFixed(2),
+      totals, history, lastDelta: deltas[histLen - 1] || 0, badges: computeBadges(totals), games: [],
+    };
+  });
+  const at = (dayOffset, h, m) => { const d = new Date(now + dayOffset * DAY); d.setHours(h, m, 0, 0); return d.getTime(); };
+  const bots = Object.keys(users);
+  const pick = (start, count) => bots.slice(start, start + count);
+  const matches = [
+    { id: 'm_1', title: '[세종] 금요 나이트 풀코트 매치', datetime: at(0, 20, 0), court: '고려대 세종캠퍼스 체육관', address: '세종특별자치시 조치원읍 세종로 2511', region: '세종특별자치시', isUnlimited: false,
+      format: '5vs5 풀코트', maxPlayers: 12, recTier: '루키 ~ 아마추어', manager: '김가비 매니저', fee: 10000, participants: pick(0, 9), status: 'open', createdAt: now },
+    { id: 'm_2', title: '[대전] 유성 주말 밸런스 매치', datetime: at(1, 19, 0), court: '대전 유성구 국민체육센터', address: '대전광역시 유성구 유성대로 807번길 19', region: '대전광역시', isUnlimited: false,
+      format: '5vs5 풀코트', maxPlayers: 12, recTier: '전체 티어', manager: '박타임 매니저', fee: 12000, participants: pick(6, 10), status: 'open', createdAt: now },
+    { id: 'm_3', title: '[서울] 성수 3vs3 하프코트 스트릿', datetime: at(1, 21, 30), court: '서울 성수 언더스탠드에비뉴 코트', address: '서울특별시 성동구 왕십리로 63', region: '서울특별시', isUnlimited: false,
+      format: '3vs3 하프코트', maxPlayers: 8, recTier: '비기너 ~ 아마추어', manager: '이농구 매니저', fee: 8000, participants: pick(10, 3), status: 'open', createdAt: now },
+    { id: 'm_4', title: '[세종] 일요 모닝 오픈런 무제한 매치', datetime: at(3, 9, 30), court: '세종 보람동 실내체육관', address: '세종특별자치시 보람서로 55', region: '세종특별자치시',
+      format: '5vs5 풀코트', maxPlayers: 0, isUnlimited: true, recTier: '전체 티어', manager: '김가비 매니저', fee: 10000, participants: pick(3, 7), status: 'open', createdAt: now },
+  ];
+  return { version: 2, auth: null, meId: null, users, matches, customCourts: loadCustomCourts(), deletedMatchIds: loadDeletedMatchIds(), reveal: null, seenMatchId: null };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.version === 2 && s.users && s.matches) {
+        return normalizeAndMergeState(s, null);
+      }
+    }
+  } catch (e) {}
+  return createSeed();
+}
+
+
+// 탭/브라우저/서버 간 상태 병합 유틸 (매니저 개설 매치 및 멀티유저 참가자 유실 원천 방지)
+function normalizeAndMergeState(base, incoming) {
+  const b = (base && base.version === 2 && base.users && base.matches) ? base : null;
+  const inc = (incoming && incoming.version === 2 && incoming.users && incoming.matches) ? incoming : null;
+  if (!b && !inc) {
+    const seed = createSeed();
+    const mySess = loadMySession();
+    return { ...seed, auth: mySess.auth || null, meId: mySess.auth ? (mySess.meId || null) : null };
+  }
+  const primary = inc || b;
+  const secondary = inc ? b : null;
+
+  // 1) 삭제된 매치 ID 병합
+  const deletedSet = new Set([
+    ...loadDeletedMatchIds(),
+    ...((b && b.deletedMatchIds) || []),
+    ...((inc && inc.deletedMatchIds) || []),
+  ]);
+
+  // 2) 커스텀 체육관 병합
+  const courtMap = new Map();
+  [...loadCustomCourts(), ...((b && b.customCourts) || []), ...((inc && inc.customCourts) || [])].forEach((c) => {
+    if (c && c.name) courtMap.set(c.name, c);
+  });
+  const customCourts = Array.from(courtMap.values());
+
+  // 3) 매치 병합 (primary + secondary + gt_manager_matches_v2 전용 스토리지 + 멀티유저 참가자 CRDT 합집합 병합)
+  const mergeMatchObj = (prev, next) => {
+    const tPrev = prev.updatedAt || prev.createdAt || 0;
+    const tNext = next.updatedAt || next.createdAt || 0;
+    const newer = tNext >= tPrev ? next : prev;
+    const older = tNext >= tPrev ? prev : next;
+
+    const appliedAt = { ...((older && older.appliedAt) || {}), ...((newer && newer.appliedAt) || {}) };
+    if (older && older.appliedAt && newer && newer.appliedAt) {
+      Object.keys(older.appliedAt).forEach((k) => {
+        appliedAt[k] = Math.max(older.appliedAt[k] || 0, newer.appliedAt[k] || 0);
+      });
+    }
+    const cancelledAt = { ...((older && older.cancelledAt) || {}), ...((newer && newer.cancelledAt) || {}) };
+    if (older && older.cancelledAt && newer && newer.cancelledAt) {
+      Object.keys(older.cancelledAt).forEach((k) => {
+        cancelledAt[k] = Math.max(older.cancelledAt[k] || 0, newer.cancelledAt[k] || 0);
+      });
+    }
+
+    const cancelledSet = new Set([...(older.cancelledIds || []), ...(newer.cancelledIds || [])]);
+    const removedSet = new Set([...(older.removedIds || []), ...(newer.removedIds || [])]);
+
+    [older.lastOp, newer.lastOp].forEach((op) => {
+      if (!op || !op.uid) return;
+      const uid = op.uid;
+      const ts = op.at || 0;
+      if (op.type === 'APPLY' && ts >= (cancelledAt[uid] || 0)) {
+        appliedAt[uid] = Math.max(appliedAt[uid] || 0, ts);
+        cancelledSet.delete(uid);
+        removedSet.delete(uid);
+      } else if (op.type === 'CANCEL' && ts >= (appliedAt[uid] || 0)) {
+        cancelledAt[uid] = Math.max(cancelledAt[uid] || 0, ts);
+        cancelledSet.add(uid);
+      } else if (op.type === 'ADMIN_REMOVE_PARTICIPANT' && ts >= (appliedAt[uid] || 0)) {
+        cancelledAt[uid] = Math.max(cancelledAt[uid] || 0, ts);
+        removedSet.add(uid);
+      }
+    });
+
+    Object.keys(appliedAt).forEach((uid) => {
+      if ((appliedAt[uid] || 0) > (cancelledAt[uid] || 0)) {
+        cancelledSet.delete(uid);
+        removedSet.delete(uid);
+      }
+    });
+    Object.keys(cancelledAt).forEach((uid) => {
+      if ((cancelledAt[uid] || 0) > (appliedAt[uid] || 0)) {
+        cancelledSet.add(uid);
+      }
+    });
+
+    const pList = [];
+    const candidates = [
+      ...(older.participants || []),
+      ...(newer.participants || []),
+      ...Object.keys(appliedAt).filter((uid) => (appliedAt[uid] || 0) > (cancelledAt[uid] || 0)),
+    ];
+    candidates.forEach((pid) => {
+      if (!pid || pList.includes(pid)) return;
+      if (!cancelledSet.has(pid) && !removedSet.has(pid)) {
+        pList.push(pid);
+      }
+    });
+    return {
+      ...older,
+      ...newer,
+      participants: pList,
+      cancelledIds: Array.from(cancelledSet),
+      removedIds: Array.from(removedSet),
+      appliedAt,
+      cancelledAt,
+    };
+  };
+  const byId = new Map();
+  const order = [];
+  const pushCandidate = (m) => {
+    if (!m || !m.id || deletedSet.has(m.id)) return;
+    if (!byId.has(m.id)) {
+      order.push(m.id);
+      byId.set(m.id, m);
+    } else {
+      byId.set(m.id, mergeMatchObj(byId.get(m.id), m));
+    }
+  };
+  loadManagerMatches().forEach(pushCandidate);
+  if (secondary && Array.isArray(secondary.matches)) secondary.matches.forEach(pushCandidate);
+  if (primary && Array.isArray(primary.matches)) primary.matches.forEach(pushCandidate);
+
+  const allMatches = order.map((id) => {
+    const m = byId.get(id);
+    const mgr = isManagerMatch(m);
+    return {
+      ...m,
+      isManagerCreated: mgr,
+      isUnlimited: isUnlimitedMatch(m),
+      address: getCourtAddress(m, { customCourts }),
+    };
+  });
+  // 매니저가 개설한 매치가 항상 배열 최상단에 위치하도록 정렬
+  const mgrList = allMatches.filter((m) => m.isManagerCreated).sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  const seedList = allMatches.filter((m) => !m.isManagerCreated);
+  const matches = [...mgrList, ...seedList];
+
+  // 4) 유저 병합 (모든 기기의 가입 유저·포지션 수정·경기 기록 보존)
+  const rawUsers = { ...((secondary && secondary.users) || {}), ...((primary && primary.users) || {}) };
+  if (secondary && secondary.users && primary && primary.users) {
+    Object.keys(secondary.users).forEach((uid) => {
+      if (primary.users[uid]) {
+        const u1 = secondary.users[uid];
+        const u2 = primary.users[uid];
+        const gp1 = (u1.totals && u1.totals.gp) || 0;
+        const gp2 = (u2.totals && u2.totals.gp) || 0;
+        const t1 = u1.updatedAt || u1.joinedAt || 0;
+        const t2 = u2.updatedAt || u2.joinedAt || 0;
+        if (gp1 !== gp2) {
+          rawUsers[uid] = gp1 > gp2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
+        } else {
+          rawUsers[uid] = t1 > t2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
+        }
+      }
+    });
+  }
+  const users = Object.fromEntries(Object.entries(rawUsers).map(([k, u]) => {
+    const birthDate = u.birthDate || `${new Date().getFullYear() - (u.age || 27)}-05-15`;
+    return [k, { ...u, birthDate, age: calcAge(birthDate, u.age), gender: u.gender || 'M' }];
+  }));
+
+  // 5) 기기별 전용 세션 키(SESSION_KEY = 'gt_my_session_v2')에서만 auth / meId 로드
+  // SESSION_KEY가 비어있으면 폴링이나 병합 시 절대 auth나 meId를 되살리지 않음
+  const mySession = loadMySession();
+  const auth = mySession.auth || null;
+  const meId = auth ? (mySession.meId || null) : null;
+
+  return {
+    ...secondary,
+    ...primary,
+    version: 2,
+    auth,
+    meId,
+    users,
+    matches,
+    customCourts,
+    deletedMatchIds: Array.from(deletedSet),
+  };
+}
+
+function readRawStorageState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    return (s && s.version === 2) ? s : null;
+  } catch (e) { return null; }
+}
+
+function stateFingerprint(s) {
+  if (!s) return '';
+  const mKey = (s.matches || []).map((m) => `${m.id}:${m.status}:${(m.participants || []).join(',')}:${m.updatedAt || m.createdAt || 0}:${m.live ? m.live.undo.length : 0}`).join('|');
+  const cKey = (s.customCourts || []).map((c) => c.name).join(',');
+  const uAllKey = Object.values(s.users || {}).map((u) => `${u.id}:${u.nickname}:${u.position}:${u.rating}:${u.updatedAt || 0}`).sort().join('|');
+  return `${Boolean(s.auth)}#${s.meId || ''}#${mKey}#${cKey}#${uAllKey}#${s.reveal ? s.reveal.matchId : ''}`;
+}
+/* =====================================================================
+ * 5. GLOBAL STATE (Reducer + LocalStorage)
+ * ===================================================================== */
+const mapMatch = (state, id, fn) => ({ ...state, matches: state.matches.map((m) => (m.id === id ? { ...fn(m), updatedAt: Date.now() } : m)) });
+
+function coreReducer(state, a) {
+  switch (a.type) {
+    case 'LOGIN': {
+      const authObj = { provider: a.provider, email: a.email || '', at: Date.now() };
+      let nextMeId = null;
+      if (a.uid && state.users && state.users[a.uid] && !state.users[a.uid].isBot) {
+        nextMeId = a.uid;
+      } else if (a.provider === 'email' && a.email) {
+        const targetEmail = a.email.trim().toLowerCase();
+        const existing = Object.values(state.users || {}).find(
+          (u) => u && !u.isBot && ((u.email && u.email.trim().toLowerCase() === targetEmail) || (u.nickname && `${u.nickname}@garbagetime.kr`.toLowerCase() === targetEmail))
+        );
+        if (existing) nextMeId = existing.id;
+      } else if (a.provider === 'kakao' && !a.forceNew) {
+        try {
+          const lastUid = localStorage.getItem(LAST_KAKAO_UID_KEY);
+          if (a.reconnect && lastUid && state.users && state.users[lastUid] && !state.users[lastUid].isBot) {
+            nextMeId = lastUid;
+          }
+        } catch (e) {}
+      }
+      saveMySession(authObj, nextMeId);
+      return { ...state, auth: authObj, meId: nextMeId };
+    }
+    case 'LOGOUT': {
+      saveMySession(null, null);
+      return { ...state, auth: null, meId: null };
+    }
+    case 'ONBOARD': {
+      const id = genUserId();
+      const nowTs = Date.now();
+      const email = (state.auth && state.auth.email) || a.profile.email || '';
+      const provider = (state.auth && state.auth.provider) || 'kakao';
+      const authObj = state.auth || { provider, email, at: nowTs };
+      const u = {
+        id, ...a.profile, email, provider, isBot: false, rating: 1000, sigma: 8.33, totals: emptyTotals(),
+        history: [{ label: '가입', rating: 1000, delta: 0 }], lastDelta: 0, badges: [], games: [],
+        joinedAt: nowTs, updatedAt: nowTs,
+      };
+      saveMySession(authObj, id);
+      try { localStorage.setItem(LAST_KAKAO_UID_KEY, id); } catch (e) {}
+      return { ...state, auth: authObj, meId: id, users: { ...state.users, [id]: u } };
+    }
+    case 'APPLY': {
+      if (!state.meId) return state;
+      const nowTs = Date.now();
+      const meUser = state.users && state.users[state.meId]
+        ? { ...state.users[state.meId], updatedAt: nowTs }
+        : null;
+      const nextUsers = meUser ? { ...state.users, [state.meId]: meUser } : state.users;
+      return mapMatch({ ...state, users: nextUsers }, a.matchId, (m) =>
+        m.status === 'open' && (isUnlimitedMatch(m) || m.participants.length < m.maxPlayers) && !m.participants.includes(state.meId)
+          ? {
+              ...m,
+              participants: [...m.participants, state.meId],
+              cancelledIds: (m.cancelledIds || []).filter((x) => x !== state.meId),
+              removedIds: (m.removedIds || []).filter((x) => x !== state.meId),
+              appliedAt: { ...((m && m.appliedAt) || {}), [state.meId]: nowTs },
+              lastOp: { type: 'APPLY', uid: state.meId, at: nowTs },
+            }
+          : m
+      );
+    }
+    case 'CANCEL': {
+      if (!state.meId) return state;
+      const nowTs = Date.now();
+      return mapMatch(state, a.matchId, (m) =>
+        m.status === 'open'
+          ? {
+              ...m,
+              participants: m.participants.filter((x) => x !== state.meId),
+              cancelledIds: Array.from(new Set([...(m.cancelledIds || []), state.meId])),
+              cancelledAt: { ...((m && m.cancelledAt) || {}), [state.meId]: nowTs },
+              lastOp: { type: 'CANCEL', uid: state.meId, at: nowTs },
+            }
+          : m
+      );
+    }
+    case 'CREATE_MATCH': {
+      let customCourts = Array.isArray(state.customCourts) ? state.customCourts : loadCustomCourts();
+      if (a.newCourt && a.newCourt.name) {
+        const exists = customCourts.some((c) => c.name === a.newCourt.name) || COURTS.some((c) => c.name === a.newCourt.name);
+        customCourts = exists
+          ? customCourts.map((c) => (c.name === a.newCourt.name ? { ...c, ...a.newCourt } : c))
+          : [...customCourts, { ...a.newCourt, isCustom: true, createdAt: Date.now() }];
+        try { localStorage.setItem(CUSTOM_COURTS_KEY, JSON.stringify(customCourts)); } catch (e) {}
+      }
+      const newMatch = {
+        ...a.match,
+        isManagerCreated: true,
+        createdAt: a.match.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      };
+      const nextMatches = [newMatch, ...state.matches.filter((m) => m.id !== newMatch.id)];
+      saveManagerMatches(nextMatches);
+      return { ...state, customCourts, matches: nextMatches };
+    }
+    case 'ADD_CUSTOM_COURT': {
+      if (!a.court || !a.court.name) return state;
+      const prev = Array.isArray(state.customCourts) ? state.customCourts : loadCustomCourts();
+      const exists = prev.some((c) => c.name === a.court.name) || COURTS.some((c) => c.name === a.court.name);
+      const customCourts = exists
+        ? prev.map((c) => (c.name === a.court.name ? { ...c, ...a.court } : c))
+        : [...prev, { ...a.court, isCustom: true, createdAt: Date.now() }];
+      try { localStorage.setItem(CUSTOM_COURTS_KEY, JSON.stringify(customCourts)); } catch (e) {}
+      return { ...state, customCourts };
+    }
+    case 'UPDATE_PROFILE': {
+      const id = state.meId;
+      if (!id || !state.users[id]) return state;
+      const prev = state.users[id];
+      const birthDate = a.profile.birthDate || prev.birthDate || '1999-05-15';
+      const updated = {
+        ...prev,
+        ...a.profile,
+        birthDate,
+        age: calcAge(birthDate, a.profile.age ?? prev.age),
+        updatedAt: Date.now(),
+      };
+      return { ...state, users: { ...state.users, [id]: updated } };
+    }
+    case 'ADMIN_SET_USER_POS': {
+      const uid = a.uid;
+      const pos = a.position;
+      if (!uid || !pos || !POSITIONS[pos] || !state.users || !state.users[uid]) return state;
+      const updatedUser = {
+        ...state.users[uid],
+        position: pos,
+        updatedAt: Date.now(),
+      };
+      return { ...state, users: { ...state.users, [uid]: updatedUser } };
+    }
+    case 'ADMIN_REMOVE_PARTICIPANT': {
+      const { matchId, uid } = a;
+      if (!matchId || !uid) return state;
+      const nowTs = Date.now();
+      return mapMatch(state, matchId, (m) => ({
+        ...m,
+        participants: (m.participants || []).filter((x) => x !== uid),
+        removedIds: Array.from(new Set([...(m.removedIds || []), uid])),
+        cancelledAt: { ...((m && m.cancelledAt) || {}), [uid]: nowTs },
+        lastOp: { type: 'ADMIN_REMOVE_PARTICIPANT', uid, at: nowTs },
+      }));
+    }
+    case 'DELETE_MATCH': {
+      const deletedMatchIds = Array.from(new Set([...(state.deletedMatchIds || []), ...loadDeletedMatchIds(), a.matchId]));
+      saveDeletedMatchIds(deletedMatchIds);
+      const nextMatches = state.matches.filter((m) => m.id !== a.matchId);
+      saveManagerMatches(nextMatches);
+      return { ...state, deletedMatchIds, matches: nextMatches };
+    }
+    case 'FILL_BOTS':
+      return mapMatch(state, a.matchId, (m) => {
+        const pool = Object.values(state.users).filter((u) => u.isBot && !m.participants.includes(u.id)).map((u) => u.id);
+        pool.sort(() => Math.random() - 0.5);
+        const cap = isUnlimitedMatch(m) ? Math.max(12, m.participants.length + 6) : Math.max(m.maxPlayers || 10, a.upTo || 0);
+        const target = a.upTo ? a.upTo : cap;
+        const need = Math.max(0, target - m.participants.length);
+        const added = pool.slice(0, need);
+        const nowTs = Date.now();
+        const nextAppliedAt = { ...((m && m.appliedAt) || {}) };
+        added.forEach((id) => { nextAppliedAt[id] = nowTs; });
+        return {
+          ...m,
+          participants: [...m.participants, ...added],
+          cancelledIds: (m.cancelledIds || []).filter((x) => !added.includes(x)),
+          removedIds: (m.removedIds || []).filter((x) => !added.includes(x)),
+          appliedAt: nextAppliedAt,
+        };
+      });
+    case 'START_GAME':
+      return mapMatch(state, a.matchId, (m) => {
+        const allTeamIds = Array.from(new Set([...(m.participants || []), ...(a.teams.A || []), ...(a.teams.B || [])]));
+        const nowTs = Date.now();
+        const nextAppliedAt = { ...((m && m.appliedAt) || {}) };
+        allTeamIds.forEach((id) => { nextAppliedAt[id] = Math.max(nextAppliedAt[id] || 0, nowTs); });
+        return {
+          ...m,
+          participants: allTeamIds,
+          appliedAt: nextAppliedAt,
+          status: 'live',
+          live: {
+            teams: a.teams, onCourt: a.starters,
+            stats: Object.fromEntries([...a.teams.A, ...a.teams.B].map((id) => [id, emptyStats()])),
+            undo: [], startedAt: nowTs,
+          },
+        };
+      });
+    case 'STAT':
+      return mapMatch(state, a.matchId, (m) => {
+        if (!m.live) return m;
+        const s = { ...m.live.stats[a.uid] };
+        s[a.key] += a.amount;
+        return { ...m, live: { ...m.live, stats: { ...m.live.stats, [a.uid]: s }, undo: [...m.live.undo, { uid: a.uid, key: a.key, amount: a.amount, t: Date.now() }].slice(-300) } };
+      });
+    case 'UNDO':
+      return mapMatch(state, a.matchId, (m) => {
+        if (!m.live || !m.live.undo.length) return m;
+        const undo = [...m.live.undo];
+        const last = undo.pop();
+        const s = { ...m.live.stats[last.uid] };
+        s[last.key] = Math.max(0, s[last.key] - last.amount);
+        return { ...m, live: { ...m.live, undo, stats: { ...m.live.stats, [last.uid]: s } } };
+      });
+    case 'SUB':
+      return mapMatch(state, a.matchId, (m) => {
+        if (!m.live) return m;
+        const court = m.live.onCourt[a.team].map((id) => (id === a.outId ? a.inId : id));
+        return { ...m, live: { ...m.live, onCourt: { ...m.live.onCourt, [a.team]: court } } };
+      });
+    case 'SUBMIT':
+      return runEngine(state, a.matchId);
+    case 'CLEAR_REVEAL':
+      return { ...state, reveal: null };
+    case 'SEEN':
+      return state.seenMatchId === a.matchId ? state : { ...state, seenMatchId: a.matchId };
+    case 'SET_STATUS':
+      // 매니저 상태 제어: 신청 마감(closed) / 모집 재개(open) / 경기 취소·중단(cancelled)
+      return mapMatch(state, a.matchId, (m) => {
+        if (m.status === 'finished') return m;
+        if (a.status === 'cancelled') { const { live, ...rest } = m; return { ...rest, status: 'cancelled', cancelledAt: Date.now() }; }
+        if (m.status === 'live' || m.status === 'cancelled') return m;
+        return { ...m, status: a.status };
+      });
+    case 'HYDRATE':
+      // 다른 탭/창(admin.html ↔ index.html)에서 변경된 상태를 병합 반영
+      return normalizeAndMergeState(state, a.state);
+    case 'RESET':
+      return createSeed();
+    default:
+      return state;
+  }
+}
+
+const Store = createContext(null);
+const useStore = () => useContext(Store);
+
+
+// 동기식 영속화 & 멀티채널 브로드캐스트 래퍼 리듀서
+let _bc = null;
+try { if (typeof BroadcastChannel !== 'undefined') _bc = new BroadcastChannel('garbagetime_sync'); } catch (e) {}
+
+function pushStateEverywhere(nextState, isReset = false) {
+  try {
+    saveManagerMatches(nextState.matches || []);
+    saveDeletedMatchIds(nextState.deletedMatchIds || []);
+    // 전역 공유 상태(STORAGE_KEY 및 /api/state)에는 기기별 세션(auth, meId)을 포함하지 않고 공유 데이터만 전송
+    const sharedPayload = { ...nextState, auth: null, meId: null };
+    const raw = JSON.stringify(sharedPayload);
+    localStorage.setItem(STORAGE_KEY, raw);
+    if (_bc) _bc.postMessage({ type: 'SYNC_STATE', state: sharedPayload });
+    if (location.protocol.startsWith('http')) {
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isReset ? { reset: true, state: sharedPayload } : { state: sharedPayload }),
+      })
+        .then((r) => (r && r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && d.ok && d.state && d.state.version === 2) {
+            const merged = normalizeAndMergeState(nextState, d.state);
+            const mergedShared = { ...merged, auth: null, meId: null };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedShared));
+          }
+        })
+        .catch(() => {});
+    }
+  } catch (e) {}
+}
+
+function reducer(rawState, a) {
+  if (a.type === 'RESET') {
+    try {
+      localStorage.removeItem(MANAGER_MATCHES_KEY);
+      localStorage.removeItem(DELETED_MATCHES_KEY);
+      localStorage.removeItem(CUSTOM_COURTS_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(LAST_KAKAO_UID_KEY);
+      localStorage.removeItem('gt_guide_seen');
+    } catch (e) {}
+    const fresh = createSeed();
+    pushStateEverywhere(fresh, true);
+    return fresh;
+  }
+  if (a.type === 'HYDRATE') {
+    const merged = normalizeAndMergeState(rawState, a.state);
+    saveManagerMatches(merged.matches || []);
+    return merged;
+  }
+  if (a.type === 'LOGOUT') {
+    saveMySession(null, null);
+    const loggedOut = { ...rawState, auth: null, meId: null };
+    pushStateEverywhere(loggedOut, false);
+    return loggedOut;
+  }
+  // 액션 실행 직전 localStorage 최신 상태와 먼저 병합하여 다른 탭의 변경사항(신규 매치 등) 덮어쓰기 방지
+  const latestBase = normalizeAndMergeState(rawState, readRawStorageState());
+  const nextRaw = coreReducer(latestBase, a);
+  const mergedNext = normalizeAndMergeState(latestBase, nextRaw);
+  pushStateEverywhere(mergedNext, false);
+  return mergedNext;
+}
+
+/* 공용 영속화 + 탭/창/서버 간 실시간 동기화 훅 (index.html ↔ admin.html & 멀티 스마트폰) */
+function useSharedPersistence(state, dispatch, setTheme) {
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+    try {
+      saveManagerMatches(state.matches || []);
+      const currentStored = readRawStorageState();
+      const merged = normalizeAndMergeState(currentStored, state);
+      const sharedOnly = { ...merged, auth: null, meId: null };
+      const raw = JSON.stringify(sharedOnly);
+      if (localStorage.getItem(STORAGE_KEY) !== raw) localStorage.setItem(STORAGE_KEY, raw);
+    } catch (e) {}
+  }, [state]);
+
+  useEffect(() => {
+    const applyIncoming = (incoming) => {
+      if (!incoming || incoming.version !== 2) return;
+      const merged = normalizeAndMergeState(stateRef.current, incoming);
+      if (stateFingerprint(merged) !== stateFingerprint(stateRef.current)) {
+        dispatch({ type: 'HYDRATE', state: merged });
+      }
+    };
+
+    const syncFromLocalAndServer = () => {
+      const localS = readRawStorageState();
+      const mgrMatches = loadManagerMatches();
+      if (localS) applyIncoming(localS);
+      else if (mgrMatches.length > 0) applyIncoming({ ...stateRef.current, matches: [...mgrMatches, ...(stateRef.current.matches || [])] });
+
+      if (location.protocol.startsWith('http')) {
+        fetch('/api/state', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d && d.ok && d.state && d.state.version === 2) {
+              // 클라우드 서버 동기화 시: 매치·유저·체육관 데이터는 실시간 공유하되,
+              // 각 스마트폰/브라우저의 로그인 세션(auth, meId)은 SESSION_KEY 기준으로 독립 유지
+              applyIncoming({ ...d.state, auth: null, meId: null });
+            } else if (d && d.ok && !d.state && stateRef.current) {
+              // 서버에 아직 초기 상태가 없으면 현재 상태를 서버에 업로드
+              pushStateEverywhere(stateRef.current, false);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    // 마운트 직후 1회 즉시 동기화
+    syncFromLocalAndServer();
+
+    const onStorage = (e) => {
+      if ((e.key === STORAGE_KEY || e.key === MANAGER_MATCHES_KEY || e.key === SESSION_KEY) && e.newValue !== undefined) {
+        syncFromLocalAndServer();
+      }
+      if (e.key === 'gt_theme' && setTheme && (e.newValue === 'light' || e.newValue === 'dark')) {
+        setTheme(e.newValue);
+      }
+    };
+
+    const onBc = (e) => {
+      if (e && e.data && e.data.type === 'SYNC_STATE' && e.data.state) {
+        applyIncoming(e.data.state);
+      }
+    };
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') syncFromLocalAndServer();
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', syncFromLocalAndServer);
+    window.addEventListener('pageshow', syncFromLocalAndServer);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    if (_bc) _bc.addEventListener('message', onBc);
+    const timer = setInterval(syncFromLocalAndServer, 1000);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', syncFromLocalAndServer);
+      window.removeEventListener('pageshow', syncFromLocalAndServer);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      if (_bc) _bc.removeEventListener('message', onBc);
+      clearInterval(timer);
+    };
+  }, [setTheme]);
+}
+
+/* =====================================================================
+ * 6. SHARED UI
+ * ===================================================================== */
+function TierEmblem({ rating, size = 56, glow = false }) {
+  const t = getTier(rating);
+  return (
+    <div style={{ width: size, height: size, filter: glow ? `drop-shadow(0 0 12px ${t.color}88)` : 'none' }} className="relative shrink-0">
+      <svg viewBox="0 0 100 100" width={size} height={size}>
+        <defs>
+          <linearGradient id={`tg-${t.id}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor={t.color} />
+            <stop offset="1" stopColor="#151515" />
+          </linearGradient>
+        </defs>
+        <polygon points="50,3 93,27 93,73 50,97 7,73 7,27" fill={`url(#tg-${t.id})`} stroke={t.color} strokeWidth="3" />
+        <polygon points="50,16 81,34 81,66 50,84 19,66 19,34" fill="#121212" opacity=".72" />
+        <text x="50" y="63" textAnchor="middle" fontSize="34" fontFamily="Bebas Neue" fill={t.color}>{t.en[0]}</text>
+      </svg>
+    </div>
+  );
+}
+
+function TierChip({ rating, className = '' }) {
+  const t = getTier(rating);
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide ${className}`}
+      style={{ color: t.color, background: `${t.color}1A`, border: `1px solid ${t.color}44` }}>
+      {t.en}
+    </span>
+  );
+}
+
+function Avatar({ user, size = 36, ring = false }) {
+  if (!user) return null;
+  const p = POSITIONS[user.position] || POSITIONS.G;
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-full font-black ${ring ? 'ring-2 ring-neon ring-offset-2 ring-offset-panel' : ''}`}
+      style={{ width: size, height: size, background: `${p.color}1F`, color: p.color, border: `1px solid ${p.color}55`, fontSize: size * 0.42 }}>
+      {user.nickname.slice(0, 1)}
+    </div>
+  );
+}
+
+function PosChip({ pos }) {
+  const p = POSITIONS[pos];
+  if (!p) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ color: p.color, background: `${p.color}18` }}>
+      <Icon name={p.icon} size={10} /> {p.name}
+    </span>
+  );
+}
+
+function DeltaChip({ delta, size = 'sm' }) {
+  const big = size === 'lg';
+  if (!delta) return <span className={`font-bebas text-white/40 ${big ? 'text-xl' : 'text-sm'}`}>— 0 PT</span>;
+  const up = delta > 0;
+  return (
+    <span className={`inline-flex items-center gap-0.5 rounded-md font-bebas ${big ? 'px-2 py-0.5 text-2xl' : 'px-1.5 text-base'} ${up ? 'bg-neon/10 text-neon' : 'bg-red-500/10 text-red-400'}`}>
+      {up ? '▲' : '▼'} {up ? '+' : ''}{delta} PT
+    </span>
+  );
+}
+
+function Card({ children, className = '', ...rest }) {
+  return <div className={`rounded-2xl border border-white/[.06] bg-panel ${className}`} {...rest}>{children}</div>;
+}
+
+function SectionTitle({ icon, title, sub, right }) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-2">
+      <div className="min-w-0">
+        <h2 className="flex items-center gap-2 text-base font-extrabold">
+          {icon && <Icon name={icon} size={17} className="text-brand" />}{title}
+        </h2>
+        {sub && <p className="mt-0.5 text-xs text-white/40">{sub}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function Modal({ open, onClose, children, wide = false, title }) {
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => e.key === 'Escape' && onClose && onClose();
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fade-in fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className={`slide-up max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-white/10 bg-panel sm:rounded-3xl ${wide ? 'sm:max-w-3xl' : 'sm:max-w-md'}`}>
+        {title && (
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-panel/95 px-5 py-3.5 backdrop-blur">
+            <h3 className="font-extrabold">{title}</h3>
+            <button onClick={onClose} className="rounded-full p-1.5 text-white/50 hover:bg-white/10 hover:text-white"><Icon name="X" size={18} /></button>
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Btn({ children, variant = 'primary', className = '', ...rest }) {
+  const v = {
+    primary: 'bg-brand text-black hover:brightness-110 glow-orange',
+    neon: 'bg-neon text-black hover:brightness-110 glow-neon',
+    ghost: 'bg-white/5 text-white hover:bg-white/10 border border-white/10',
+    danger: 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20',
+    outline: 'border border-brand/50 text-brand hover:bg-brand/10',
+  }[variant];
+  return (
+    <button className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-extrabold transition active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${v} ${className}`} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+function Toasts({ items }) {
+  return (
+    <div className="pointer-events-none fixed left-1/2 top-16 z-[80] flex w-[92%] max-w-sm -translate-x-1/2 flex-col gap-2">
+      {items.map((t) => (
+        <div key={t.id} className={`slide-up flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-2xl backdrop-blur-xl ${
+          t.type === 'success' ? 'border-neon/40 bg-panel/95 text-neon' : t.type === 'error' ? 'border-red-500/40 bg-panel/95 text-red-300' : t.type === 'admin' ? 'border-brand/40 bg-panel/95 text-brand' : 'border-white/10 bg-panel/95 text-white'}`}>
+          <Icon name={t.type === 'success' ? 'CircleCheck' : t.type === 'error' ? 'TriangleAlert' : t.type === 'admin' ? 'ShieldCheck' : 'Info'} size={16} />
+          <span>{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function matchStatus(m) {
+  if (m.status === 'live') return { key: 'live', label: '● LIVE 경기중', cls: 'bg-red-500/15 text-red-400 border-red-500/40' };
+  if (m.status === 'finished') return { key: 'done', label: '경기 종료', cls: 'bg-white/5 text-white/50 border-white/10' };
+  if (m.status === 'cancelled') return { key: 'cancelled', label: '경기 취소', cls: 'bg-red-500/10 text-red-400 border-red-500/30' };
+  if (m.status === 'closed') return { key: 'closed', label: '신청 마감', cls: 'bg-white/5 text-white/60 border-white/15' };
+  if (isUnlimitedMatch(m)) return { key: 'unlimited', label: '∞ 오픈런 모집중', cls: 'bg-neon/15 text-neon border-neon/40' };
+  const left = m.maxPlayers - m.participants.length;
+  if (left <= 0) return { key: 'full', label: '모집 마감', cls: 'bg-white/5 text-white/50 border-white/10' };
+  if (left <= 2) return { key: 'hot', label: '🔥 마감 임박', cls: 'bg-brand/15 text-brand border-brand/40' };
+  return { key: 'open', label: '모집중', cls: 'bg-neon/10 text-neon border-neon/30' };
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useStore();
+  const light = theme === 'light';
+  return (
+    <button onClick={() => { setTheme(light ? 'dark' : 'light'); vibrate(8); }} aria-label="테마 전환" title={light ? '다크 모드로 전환' : '라이트 모드로 전환'}
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:text-brand active:scale-90">
+      <Icon name={light ? 'Moon' : 'Sun'} size={17} />
+    </button>
+  );
+}
+
+// 체육관 상세 도로명 주소 + [주소 복사] / [네이버 지도] / [카카오맵] 액션 바
+function CourtAddressBar({ court, address, compact = false }) {
+  const { toast } = useStore();
+  const addr = address || court || '';
+  const q = addr || court;
+  return (
+    <div className={`rounded-xl border border-white/[.06] bg-ink/60 ${compact ? 'px-2.5 py-2' : 'p-3'}`}>
+      <div className="flex items-start gap-2">
+        <Icon name="MapPin" size={14} className="mt-0.5 shrink-0 text-brand" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-extrabold text-white/90">{court}</div>
+          <div className="mt-0.5 break-keep text-[11px] leading-snug text-white/55">{addr}</div>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <button type="button" onClick={(e) => { e.stopPropagation(); copyAddress(addr, toast); }}
+          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/75 transition hover:border-brand hover:text-brand active:scale-95">
+          <Icon name="Copy" size={11} /> 주소 복사
+        </button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); openNaverMap(q); }}
+          className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/40 bg-[#03C75A]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#03C75A] transition hover:bg-[#03C75A]/25 active:scale-95">
+          <Icon name="Navigation" size={11} /> 네이버 지도
+        </button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); openKakaoMap(q); }}
+          className="inline-flex items-center gap-1 rounded-lg border border-[#FEE500]/50 bg-[#FEE500]/20 px-2.5 py-1 text-[11px] font-extrabold text-yellow-300 transition hover:bg-[#FEE500]/30 active:scale-95">
+          <Icon name="Map" size={11} /> 카카오맵
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* =====================================================================
+ * 7. CHARTS (Chart.js)
+ * ===================================================================== */
+// 테마별 차트 색상 (라이트 모드에서는 다크 차콜 기반으로 전환)
+function chartTheme() {
+  const light = document.documentElement.classList.contains('light');
+  const rgb = light ? '17,24,39' : '255,255,255';
+  return { fg: (a) => `rgba(${rgb},${a})`, bg: light ? '#FFFFFF' : '#121212', border: light ? '#E5E7EB' : '#333' };
+}
+
+function RadarChart({ values, compare, height = 290 }) {
+  const ref = useRef(null);
+  const chart = useRef(null);
+  const theme = (useStore() || {}).theme;
+  useEffect(() => {
+    if (!window.Chart || !ref.current) return;
+    const ct = chartTheme();
+    chart.current && chart.current.destroy();
+    chart.current = new Chart(ref.current.getContext('2d'), {
+      type: 'radar',
+      data: {
+        labels: RADAR_AXES,
+        datasets: [
+          { label: '나의 플레이 스타일', data: values, backgroundColor: 'rgba(255,85,0,0.28)', borderColor: '#FF5500', borderWidth: 2.5,
+            pointBackgroundColor: '#00FF66', pointBorderColor: ct.bg, pointBorderWidth: 2, pointRadius: 4.5, pointHoverRadius: 6 },
+          ...(compare ? [{ label: '플랫폼 평균', data: compare, backgroundColor: ct.fg(0.03), borderColor: ct.fg(0.35),
+            borderDash: [4, 4], borderWidth: 1.2, pointRadius: 0 }] : []),
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 1000, easing: 'easeOutQuart' },
+        scales: {
+          r: {
+            min: 0, max: 100, ticks: { display: false, stepSize: 25 },
+            grid: { color: ct.fg(0.08) }, angleLines: { color: ct.fg(0.1) },
+            pointLabels: { color: ct.fg(0.85), font: { size: 12, weight: '700', family: 'Pretendard Variable' } },
+          },
+        },
+        plugins: {
+          legend: { display: !!compare, position: 'bottom', labels: { color: ct.fg(.6), boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+          tooltip: { backgroundColor: ct.bg, borderColor: ct.border, borderWidth: 1, callbacks: { label: (c) => ` ${c.dataset.label}: ${Math.round(c.raw)}점` } },
+        },
+      },
+    });
+    return () => chart.current && chart.current.destroy();
+  }, [JSON.stringify(values), JSON.stringify(compare), theme]);
+  return <div style={{ height }} className="relative"><canvas ref={ref} /></div>;
+}
+
+const tierLinesPlugin = {
+  id: 'tierLines',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.y) return;
+    TIERS.slice(1).forEach((t) => {
+      const py = scales.y.getPixelForValue(t.min);
+      if (py < chartArea.top || py > chartArea.bottom) return;
+      ctx.save();
+      ctx.strokeStyle = `${t.color}55`;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(chartArea.left, py); ctx.lineTo(chartArea.right, py); ctx.stroke();
+      ctx.fillStyle = t.color; ctx.font = '700 10px Pretendard Variable'; ctx.textAlign = 'right';
+      ctx.fillText(`${t.name} ${t.min}`, chartArea.right - 4, py - 4);
+      ctx.restore();
+    });
+  },
+};
+
+function MomentumChart({ history, height = 230 }) {
+  const ref = useRef(null);
+  const chart = useRef(null);
+  const theme = (useStore() || {}).theme;
+  const data = history.slice(-10);
+  useEffect(() => {
+    if (!window.Chart || !ref.current) return;
+    const ct = chartTheme();
+    chart.current && chart.current.destroy();
+    const ctx = ref.current.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
+    grad.addColorStop(0, 'rgba(255,85,0,0.35)');
+    grad.addColorStop(1, 'rgba(255,85,0,0)');
+    const ratings = data.map((d) => d.rating);
+    const last = data.length - 1;
+    chart.current = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.map((d) => d.label),
+        datasets: [{
+          label: '레이팅', data: ratings, fill: true, backgroundColor: grad, borderColor: '#FF5500', borderWidth: 2.5, tension: 0.4,
+          pointBackgroundColor: data.map((d, i) => (i === last ? '#00FF66' : d.delta > 0 ? '#00FF66' : d.delta < 0 ? '#EF4444' : '#888')),
+          pointBorderColor: ct.bg, pointBorderWidth: 2,
+          pointRadius: data.map((_, i) => (i === last ? 7 : 4)), pointHoverRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        interaction: { intersect: false, mode: 'index' },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: ct.fg(.45), font: { size: 10 } } },
+          y: {
+            suggestedMin: Math.min(...ratings) - 30, suggestedMax: Math.max(...ratings) + 30,
+            grid: { color: ct.fg(.05) }, ticks: { color: ct.fg(.45), font: { size: 10 }, maxTicksLimit: 5 },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: ct.bg, borderColor: ct.border, borderWidth: 1, displayColors: false,
+            callbacks: { label: (c) => { const d = data[c.dataIndex]; return [`레이팅 ${d.rating} PT`, d.delta ? `변동 ${signed(d.delta)} PT` : '기준점']; } },
+          },
+        },
+      },
+      plugins: [tierLinesPlugin],
+    });
+    return () => chart.current && chart.current.destroy();
+  }, [JSON.stringify(data), theme]);
+  return <div style={{ height }} className="relative"><canvas ref={ref} /></div>;
+}
+
+/* =====================================================================
+ * 9. ADMIN SHELL: PIN GATE / HEADER / NAV
+ * ===================================================================== */
+const ADMIN_SESSION_KEY = 'gt_admin_session';
+
+function PinGate({ onSuccess }) {
+  const [pin, setPin] = useState('');
+  const [err, setErr] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
+  const press = useCallback((d) => {
+    setErr(false);
+    setPin((p) => {
+      if (p.length >= 4) return p;
+      const np = p + d;
+      if (np.length === 4) {
+        setTimeout(() => {
+          if (np === ADMIN_PIN) onSuccess();
+          else { setErr(true); setShakeKey((k) => k + 1); setPin(''); vibrate(120); }
+        }, 160);
+      }
+      return np;
+    });
+  }, [onSuccess]);
+  const del = () => setPin((p) => p.slice(0, -1));
+  useEffect(() => {
+    const h = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); if (e.key === 'Backspace') del(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [press]);
+  const key = 'h-14 rounded-2xl bg-white/5 font-bebas text-3xl transition hover:bg-white/10 active:scale-95 active:bg-brand/30';
+  return (
+    <div className="court-bg flex min-h-[100dvh] items-center justify-center px-5 py-10">
+      <div className="slide-up w-full max-w-sm rounded-3xl border border-white/10 bg-panel/90 px-6 pb-8 pt-8 text-center shadow-2xl backdrop-blur">
+        <div className="flex justify-end"><ThemeToggle /></div>
+        <BallLogo size={46} className="mx-auto -mt-4" />
+        <div className="mt-3 font-bebas text-3xl leading-none tracking-wider">GARBAGE<span className="text-brand"> TIME</span></div>
+        <div className="mt-1 text-[10px] font-extrabold tracking-[.35em] text-brand">MANAGER CONSOLE</div>
+        <div className="mx-auto mt-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/15 text-brand glow-orange"><Icon name="KeyRound" size={26} /></div>
+        <h1 className="mt-4 text-lg font-extrabold">직원(Admin) 인증</h1>
+        <p className="mt-1 text-xs text-white/45">매치 개설 · 공식 스탯 입력은 허가된 직원만 가능합니다.<br />관리자 PIN 4자리를 입력하세요.</p>
+        <div key={shakeKey} className={`mt-6 flex justify-center gap-3 ${err ? 'shake' : ''}`}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className={`h-4 w-4 rounded-full border-2 transition ${err ? 'border-red-500' : i < pin.length ? 'border-brand bg-brand shadow-[0_0_12px_#FF5500]' : 'border-white/25'}`} />
+          ))}
+        </div>
+        <div className={`mt-3 h-4 text-xs font-bold ${err ? 'text-red-400' : 'text-white/25'}`}>{err ? 'PIN이 올바르지 않습니다. 접근이 거부되었습니다.' : '데모 PIN: 1234'}</div>
+        <div className="mx-auto mt-4 grid max-w-[260px] grid-cols-3 gap-2.5">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => <button key={d} onClick={() => press(d)} className={key}>{d}</button>)}
+          <button onClick={() => setPin('')} className="h-14 rounded-2xl text-xs font-bold text-white/40 hover:bg-white/5">전체삭제</button>
+          <button onClick={() => press('0')} className={key}>0</button>
+          <button onClick={del} className="flex h-14 items-center justify-center rounded-2xl text-white/50 hover:bg-white/5" aria-label="지우기"><Icon name="Delete" size={22} /></button>
+        </div>
+        <a href="index.html" className="mt-6 inline-flex items-center gap-1 text-[11px] font-bold text-white/35 hover:text-white/70">
+          <Icon name="ArrowLeft" size={12} /> 일반 유저 앱으로 돌아가기
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function AdminHeader({ onLock }) {
+  const { setTab, theme, setTheme } = useStore();
+  const light = theme === 'light';
+  return (
+    <header className="sticky top-0 z-40 border-b border-white/5 bg-ink/85 backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4">
+        <button onClick={() => setTab('console')} className="flex min-w-0 items-center gap-2">
+          <BallLogo size={30} />
+          <div className="text-left leading-none">
+            <div className="font-bebas text-[22px] tracking-wider">GARBAGE<span className="text-brand"> TIME</span></div>
+            <div className="-mt-0.5 text-[9px] font-bold tracking-wider text-white/35">가비지타임 <span className="text-brand">· MANAGER BACK-OFFICE</span></div>
+          </div>
+        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setTheme(light ? 'dark' : 'light'); vibrate(8); }} aria-label="테마 전환"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/75 transition hover:border-brand hover:text-brand active:scale-95">
+            <Icon name={light ? 'Moon' : 'Sun'} size={14} />
+            <span className="hidden sm:inline">{light ? '다크 모드' : '라이트 모드'}</span>
+          </button>
+          <a href="index.html" target="garbagetime_user" rel="noopener"
+            className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 transition hover:text-white sm:inline-flex">
+            <Icon name="Smartphone" size={14} /> 유저 앱 열기 <Icon name="ExternalLink" size={12} />
+          </a>
+          <button onClick={onLock} className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-xs font-extrabold text-black glow-orange transition active:scale-95">
+            <Icon name="Lock" size={14} /> 잠금
+          </button>
+        </div>
+      </div>
+      <div className="border-t border-brand/30 bg-gradient-to-r from-brand/25 via-brand/10 to-transparent">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-1.5 text-[11px] font-bold text-brand">
+          <Icon name="ShieldCheck" size={13} />
+          <span className="truncate">직원 전용 백오피스 · 매치 개설 · 카카오 주소 체육관 등록 · 오픈런/스탯 입력 활성화</span>
+          <span className="ml-auto hidden items-center gap-1 text-white/45 sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neon" /> 세션 인증됨 · 유저 앱과 실시간 동기화 중</span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function AdminNav() {
+  const { tab, setTab, state } = useStore();
+  const liveCount = state.matches.filter((m) => m.status === 'live').length;
+  const items = [
+    { id: 'console', label: '매치 콘솔', icon: 'ClipboardList' },
+    { id: 'statpad', label: '스탯 패드', icon: 'Gauge', badge: liveCount },
+    { id: 'records', label: '공식 기록', icon: 'History' },
+  ];
+  return (
+    <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-panel/95 backdrop-blur-xl">
+      <div className="mx-auto grid max-w-xl grid-cols-3">
+        {items.map((it) => {
+          const on = tab === it.id;
+          return (
+            <button key={it.id} onClick={() => setTab(it.id)} className={`relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition active:scale-90 ${on ? 'text-brand' : 'text-white/40 hover:text-white/70'}`}>
+              {on && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-brand" />}
+              <div className="relative">
+                <Icon name={it.icon} size={22} strokeWidth={on ? 2.4 : 1.8} />
+                {!!it.badge && <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] text-pure">{it.badge}</span>}
+              </div>
+              {it.label}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/* =====================================================================
+ * 13. ADMIN: MATCH CONSOLE
+ * ===================================================================== */
+// admin.html 은 진입 시 PIN 게이트로 전체가 보호되므로 페이지 단위 가드는 통과 처리
+function AdminGuard({ children }) { return children; }
+
+// 카카오 우편번호 내장 검색 폴백 데이터 (오프라인/팝업 차단 시에도 즉시 검색 가능)
+const POSTCODE_PRESETS = [
+  { buildingName: '조치원중학교 실내체육관', roadAddress: '세종특별자치시 조치원읍 깃대봉길 15', sido: '세종특별자치시' },
+  { buildingName: '고려대학교 세종캠퍼스 체육관', roadAddress: '세종특별자치시 조치원읍 세종로 2511', sido: '세종특별자치시' },
+  { buildingName: '세종시민체육관', roadAddress: '세종특별자치시 조치원읍 대첩로 76', sido: '세종특별자치시' },
+  { buildingName: '보람동 다목적체육관', roadAddress: '세종특별자치시 보람서로 55', sido: '세종특별자치시' },
+  { buildingName: '대전충무체육관', roadAddress: '대전광역시 중구 부사동 177', sido: '대전광역시' },
+  { buildingName: '잠실실내체육관 보조경기장', roadAddress: '서울특별시 송파구 올림픽로 25', sido: '서울특별시' },
+  { buildingName: '수원칠보실내체육관', roadAddress: '경기도 수원시 권선구 서수원로577번길 171', sido: '경기도' },
+];
+
+function CreateMatchForm({ onCreated }) {
+  const { state, dispatch, toast } = useStore();
+  const courts = useMemo(() => getAllCourts(state), [state.customCourts]);
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const [f, setF] = useState({
+    title: '', date: iso, time: '20:00', courtIdx: 0,
+    customCourt: '', customAddress: '', city: COURTS[0].city,
+    format: '5vs5 풀코트', maxPlayers: 12, recTier: REC_TIERS[0], manager: MANAGERS[0], fee: 10000,
+  });
+  const [postcodeModal, setPostcodeModal] = useState(false);
+  const [postcodeQuery, setPostcodeQuery] = useState('');
+  const [lastCreated, setLastCreated] = useState(null);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const custom = f.courtIdx === -1;
+  const selectedCourt = !custom && courts[f.courtIdx] ? courts[f.courtIdx] : null;
+  const isUnlimited = Number(f.maxPlayers) === 0;
+
+  // 카카오 우편번호 검색 결과 콜백 (oncomplete)
+  const handlePostcodeComplete = useCallback((data) => {
+    const roadAddr = (data.roadAddress || data.jibunAddress || data.address || '').trim();
+    const rawBName = (data.buildingName || '').trim();
+    const mappedCity = parseSidoToCity(data.sido || '', roadAddr);
+    const fallbackCourt = rawBName || (data.bname ? `${data.bname} 실내체육관` : (roadAddr ? `${roadAddr.split(' ').slice(0, 3).join(' ')} 체육관` : ''));
+    setF((p) => ({
+      ...p,
+      customAddress: roadAddr || p.customAddress,
+      customCourt: rawBName || p.customCourt || fallbackCourt,
+      city: mappedCity,
+    }));
+    toast(rawBName ? `주소 선택 완료 · [${rawBName}] 명칭이 자동 추천되었습니다` : `도로명 주소 입력 완료 · [${fallbackCourt}] 명칭이 추천되었습니다`, 'admin');
+  }, [toast]);
+
+  // [🔍 카카오 주소로 체육관 찾기] 실행
+  const openKakaoPostcode = () => {
+    if (window.daum && window.daum.Postcode) {
+      try {
+        new window.daum.Postcode({
+          oncomplete: function (data) {
+            handlePostcodeComplete(data);
+          },
+        }).open();
+        return;
+      } catch (e) {}
+    }
+    // 오프라인 또는 팝업 제한 환경 시 내장 주소 검색 모달 오픈
+    setPostcodeModal(true);
+  };
+
+  // 체육관만 먼저 목록에 등록하기
+  const registerCourtOnly = () => {
+    const rawName = f.customCourt.trim();
+    const rawAddr = f.customAddress.trim();
+    if (!rawName && !rawAddr) return toast('체육관 이름 또는 도로명 주소를 입력해주세요', 'error');
+    const name = rawName || `${rawAddr.split(' ').slice(0, 3).join(' ')} 체육관`;
+    const address = rawAddr || `${f.city} ${name}`;
+    dispatch({ type: 'ADD_CUSTOM_COURT', court: { name, address, city: f.city, isCustom: true } });
+    setF((p) => ({ ...p, customCourt: name, customAddress: address }));
+    toast(`신규 체육관 [${name}] 저장 완료! 하단 [매치 개설 & 로비 게시] 버튼을 누르면 매치가 개설됩니다`, 'admin');
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    let court = '';
+    let address = '';
+    let region = f.city;
+    if (custom) {
+      const rawName = f.customCourt.trim();
+      const rawAddr = f.customAddress.trim();
+      if (!rawName && !rawAddr) {
+        // 둘 다 비어있으면 기본 첫 번째 체육관으로 안전 폴백
+        const def = courts[0] || COURTS[0];
+        court = def.name;
+        address = def.address;
+        region = def.city;
+      } else {
+        court = rawName || `${rawAddr.split(' ').slice(0, 3).join(' ')} 체육관`;
+        address = rawAddr || `${f.city} ${court}`;
+        region = f.city;
+      }
+    } else {
+      const sc = selectedCourt || courts[0] || COURTS[0];
+      court = sc.name;
+      address = sc.address;
+      region = sc.city || f.city;
+    }
+
+    const datetime = new Date(`${f.date}T${f.time}:00`).getTime();
+    if (isNaN(datetime)) return toast('경기 일시를 확인해주세요', 'error');
+    const maxP = Number(f.maxPlayers);
+    const unlimited = maxP === 0;
+    const title = f.title.trim() || `[${region.replace(/(특별자치시|특별시|광역시|도)$/, '')}] ${DOW[new Date(datetime).getDay()]}요 ${unlimited ? '오픈런 무제한' : f.format.split(' ')[0]} 매치`;
+    const nowTs = Date.now();
+    const match = {
+      id: genId('m'), title, datetime, court, address, region,
+      format: f.format, maxPlayers: maxP, isUnlimited: unlimited,
+      recTier: f.recTier, manager: f.manager, fee: +f.fee,
+      participants: [], status: 'open', isManagerCreated: true, createdAt: nowTs, updatedAt: nowTs,
+    };
+    const newCourt = (custom && (f.customCourt.trim() || f.customAddress.trim())) ? { name: court, address, city: region, isCustom: true } : null;
+    dispatch({ type: 'CREATE_MATCH', match, newCourt });
+    setLastCreated(match);
+    toast(`🏀 [${title}] 매치가 개설되어 유저 로비 최상단에 즉시 게시되었습니다!`, 'admin');
+    setF((p) => ({ ...p, title: '', customCourt: '', customAddress: '', courtIdx: 0 }));
+    onCreated && onCreated();
+  };
+  const input = 'w-full rounded-xl border border-white/10 bg-ink px-3 py-2.5 text-sm font-semibold outline-none focus:border-brand';
+  const Label = ({ children }) => <label className="mb-1 block text-[11px] font-bold text-white/45">{children}</label>;
+  return (
+    <>
+      <form onSubmit={submit} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="col-span-2 md:col-span-4"><Label>매치명 (비우면 자동 생성)</Label><input className={input} value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="예) [세종] 금요 나이트 풀코트 매치 / 오픈런" /></div>
+        <div><Label>경기 날짜</Label><input type="date" className={input} value={f.date} onChange={(e) => set('date', e.target.value)} /></div>
+        <div><Label>시작 시간</Label><input type="time" className={input} value={f.time} onChange={(e) => set('time', e.target.value)} /></div>
+        <div className="col-span-2"><Label>체육관 / 코트 장소</Label>
+          <select className={input} value={f.courtIdx} onChange={(e) => { const i = +e.target.value; setF((p) => ({ ...p, courtIdx: i, city: i >= 0 && courts[i] ? courts[i].city : p.city })); }}>
+            {courts.map((c, i) => <option key={c.name} value={i}>{c.isCustom ? `[직접등록] ${c.name}` : c.name} ({c.city.replace(/(특별자치시|특별시|광역시|도)$/, '')})</option>)}
+            <option value={-1}>+ 새 체육관 직접 등록</option>
+          </select>
+        </div>
+        {!custom && selectedCourt && (
+          <div className="col-span-2 md:col-span-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/5 bg-ink/50 px-3 py-2 text-xs">
+            <div className="flex items-center gap-1.5 text-white/65">
+              <Icon name="MapPin" size={13} className="text-brand" />
+              <span className="font-bold">{selectedCourt.name}</span>
+              <span className="text-white/40">·</span>
+              <span>{selectedCourt.address}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => openNaverMap(selectedCourt.address || selectedCourt.name)} className="rounded-md bg-[#03C75A]/15 px-2 py-0.5 text-[11px] font-bold text-[#03C75A] hover:bg-[#03C75A]/25">네이버 지도</button>
+              <button type="button" onClick={() => openKakaoMap(selectedCourt.address || selectedCourt.name)} className="rounded-md bg-[#FEE500]/20 px-2 py-0.5 text-[11px] font-bold text-yellow-300 hover:bg-[#FEE500]/30">카카오맵</button>
+            </div>
+          </div>
+        )}
+        {custom && (
+          <div className="col-span-2 md:col-span-4 space-y-3 rounded-2xl border border-brand/30 bg-brand/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-extrabold text-brand">
+                <Icon name="MapPinned" size={15} /> 새 체육관 직접 등록 (카카오 우편번호/도로명 주소 연동)
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={openKakaoPostcode}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#FEE500] px-3.5 py-2 text-xs font-extrabold text-[#191919] shadow transition hover:brightness-95 active:scale-95">
+                  <Icon name="Search" size={14} /> 🔍 카카오 주소로 체육관 찾기
+                </button>
+                <button type="button" onClick={registerCourtOnly}
+                  className="inline-flex items-center gap-1 rounded-xl border border-brand/40 bg-brand/15 px-3 py-2 text-xs font-extrabold text-brand transition hover:bg-brand/25 active:scale-95">
+                  <Icon name="Plus" size={13} /> 체육관 목록에 저장
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="md:col-span-2">
+                <Label>도로명 상세 주소 (카카오 주소검색 시 자동 입력)</Label>
+                <input className={input} value={f.customAddress} onChange={(e) => set('customAddress', e.target.value)} placeholder="예) 세종특별자치시 조치원읍 깃대봉길 15" />
+              </div>
+              <div className="md:col-span-1">
+                <Label>체육관 / 코트 이름 (건물명 자동 추천)</Label>
+                <input className={input} value={f.customCourt} onChange={(e) => set('customCourt', e.target.value)} placeholder="예) 조치원중학교 실내체육관" />
+              </div>
+              <div className="md:col-span-1">
+                <Label>지역 선택 (시/도 자동 파싱)</Label>
+                <select className={input} value={f.city} onChange={(e) => set('city', e.target.value)}>{Object.keys(REGIONS).map((c) => <option key={c}>{c}</option>)}</select>
+              </div>
+            </div>
+          </div>
+        )}
+        <div><Label>매치 포맷</Label>
+          <select className={input} value={f.format} onChange={(e) => set('format', e.target.value)}>
+            {Object.keys(FORMATS).map((k) => <option key={k}>{k}</option>)}
+          </select>
+        </div>
+        <div><Label>최대 인원 (정원 · 오픈런 설정)</Label>
+          <select className={input} value={f.maxPlayers} onChange={(e) => set('maxPlayers', +e.target.value)}>
+            {MAX_PLAYER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+        </div>
+        <div><Label>권장 티어</Label><select className={input} value={f.recTier} onChange={(e) => set('recTier', e.target.value)}>{REC_TIERS.map((t) => <option key={t}>{t}</option>)}</select></div>
+        <div><Label>담당 매니저</Label><select className={input} value={f.manager} onChange={(e) => set('manager', e.target.value)}>{MANAGERS.map((t) => <option key={t}>{t}</option>)}</select></div>
+        <div><Label>참가비</Label><select className={input} value={f.fee} onChange={(e) => set('fee', +e.target.value)}>{[0, 5000, 8000, 10000, 12000, 15000].map((v) => <option key={v} value={v}>{v ? fmtWon(v) : '무료'}</option>)}</select></div>
+        <div className="col-span-2 flex items-end md:col-span-3">
+          <Btn type="submit" className="w-full">
+            <Icon name="CalendarPlus" size={16} /> {isUnlimited ? '오픈런(인원 무제한) 매치 개설 & 로비 게시' : '공식 매치 개설 & 로비 게시'}
+          </Btn>
+        </div>
+      </form>
+      {lastCreated && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neon/40 bg-neon/10 px-4 py-2.5 text-xs">
+          <span className="font-extrabold text-neon">
+            ✓ 방금 개설됨: [{lastCreated.title}] ({lastCreated.court}) — 유저 앱 로비 최상단에 즉시 반영되었습니다!
+          </span>
+          <a href="index.html" target="garbagetime_user" className="inline-flex items-center gap-1 rounded-lg bg-neon px-3 py-1.5 text-[11px] font-black text-black transition hover:brightness-110">
+            유저 로비에서 확인하기 <Icon name="ExternalLink" size={12} />
+          </a>
+        </div>
+      )}
+
+      <Modal open={postcodeModal} onClose={() => setPostcodeModal(false)} title="🔍 카카오 도로명 주소 · 체육관 검색">
+        <div className="space-y-3 p-5">
+          <p className="text-xs text-white/55">학교, 체육관 명칭 또는 도로명 주소를 검색해 선택하면 도로명 주소·건물명·지역이 자동 입력됩니다.</p>
+          <input value={postcodeQuery} onChange={(e) => setPostcodeQuery(e.target.value)} placeholder="예) 조치원중학교, 세종로 2511, 보람서로..."
+            className="w-full rounded-xl border border-white/10 bg-ink px-3.5 py-2.5 text-sm font-bold outline-none focus:border-brand" />
+          <div className="max-h-60 space-y-1.5 overflow-y-auto">
+            {POSTCODE_PRESETS.filter((p) => !postcodeQuery.trim() || p.buildingName.includes(postcodeQuery) || p.roadAddress.includes(postcodeQuery)).map((p) => (
+              <button key={p.roadAddress} type="button" onClick={() => { handlePostcodeComplete(p); setPostcodeModal(false); }}
+                className="flex w-full items-start justify-between gap-2 rounded-xl border border-white/[.06] bg-ink/70 p-3 text-left transition hover:border-brand">
+                <div>
+                  <div className="text-xs font-extrabold text-brand">{p.buildingName}</div>
+                  <div className="mt-0.5 text-xs text-white/75">{p.roadAddress}</div>
+                </div>
+                <span className="shrink-0 rounded bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/50">{p.sido}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+function autoBalance(ids, users, meId) {
+  const sorted = [...ids].sort((a, b) => {
+    const botA = users[a]?.isBot ? 1 : 0;
+    const botB = users[b]?.isBot ? 1 : 0;
+    if (botA !== botB) return botA - botB;
+    return (users[b]?.rating || 0) - (users[a]?.rating || 0);
+  });
+  const A = [], B = [];
+  sorted.forEach((id, i) => { const r = i % 4; (r === 0 || r === 3 ? A : B).push(id); });
+  return { A, B };
+}
+
+function pickDefaultStarters(ids, users, meId, N) {
+  return [...ids].sort((a, b) => (a === meId ? -1 : b === meId ? 1 : (users[b]?.rating || 0) - (users[a]?.rating || 0))).slice(0, N);
+}
+
+const ADMIN_POS_KEYS = ['G', 'PG', 'SG', 'F', 'SF', 'PF', 'C'];
+
+/* ---------- 매니저 콘솔 매치 카드 내: 실시간 참가 신청자 명단 & 포지션 현황판 ---------- */
+function MatchParticipantRoster({ match }) {
+  const { state, dispatch, toast } = useStore();
+  const participants = (match.participants || [])
+    .map((id) => state.users && state.users[id])
+    .filter(Boolean)
+    .sort((a, b) => (a.isBot === b.isBot ? 0 : a.isBot ? 1 : -1));
+
+  const gCount = participants.filter((u) => ['G', 'PG', 'SG'].includes(u.position)).length;
+  const fCount = participants.filter((u) => ['F', 'SF', 'PF'].includes(u.position)).length;
+  const cCount = participants.filter((u) => u.position === 'C').length;
+  const realCount = participants.filter((u) => !u.isBot).length;
+  const botCount = participants.filter((u) => u.isBot).length;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-ink/70 p-3">
+      {/* 포지션 분포 요약 바 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[.06] pb-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-extrabold">
+          <Icon name="Users" size={14} className="text-brand" />
+          <span>
+            현재 참가 <b className="text-brand">{participants.length}명</b> —{' '}
+            <span className="text-[#FFB020]">가드(G/PG/SG) {gCount}명</span> ·{' '}
+            <span className="text-neon">포워드(F/SF/PF) {fCount}명</span> ·{' '}
+            <span className="text-[#A78BFA]">센터(C) {cCount}명</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-extrabold">
+          <span className="rounded-md border border-neon/40 bg-neon/15 px-1.5 py-0.5 text-neon">실제유저 {realCount}명</span>
+          <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-white/55">게스트 {botCount}명</span>
+        </div>
+      </div>
+
+      {/* 실시간 참가자 리스트 */}
+      {participants.length === 0 ? (
+        <div className="py-3 text-center text-xs text-white/40">
+          아직 참가 신청한 선수가 없습니다. 유저가 신청하면 이곳에 실시간으로 표시됩니다.
+        </div>
+      ) : (
+        <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-0.5">
+          {participants.map((u) => {
+            const tier = getTier(u.rating);
+            const manAge = calcAge(u.birthDate, u.age);
+            const posObj = POSITIONS[u.position] || POSITIONS.G;
+            return (
+              <div
+                key={u.id}
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-xs transition ${
+                  !u.isBot ? 'border-neon/35 bg-neon/[.05]' : 'border-white/[.05] bg-panel/70'
+                }`}
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {!u.isBot ? (
+                    <span className="shrink-0 rounded border border-neon/50 bg-neon/20 px-1.5 py-0.5 text-[10px] font-black text-neon">실제유저</span>
+                  ) : (
+                    <span className="shrink-0 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-white/45">게스트</span>
+                  )}
+                  <Avatar user={u} size={24} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate font-extrabold text-white">
+                        {u.nickname}
+                        {u.realName ? <span className="ml-1 text-[11px] font-bold text-brand">({u.realName})</span> : null}
+                      </span>
+                      <span className="text-[10px] font-semibold text-white/55">
+                        {u.gender === 'F' ? '여' : '남'}·만 {manAge}세 · {u.height}cm/{u.weight}kg
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-white/50">
+                      <span className="font-extrabold" style={{ color: tier.color }}>{tier.name}</span>
+                      <span>·</span>
+                      <span className="font-mono font-bold text-white/75">{u.rating} PT</span>
+                      {u.city && (
+                        <>
+                          <span>·</span>
+                          <span className="truncate">{u.city.replace(/(특별자치시|특별시|광역시|도)$/, '')} {u.district || ''}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 우측: 포지션 즉시 변경 드롭다운 & 개별 참가 취소(제외) 버튼 */}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <select
+                    aria-label={`${u.nickname} 포지션 변경`}
+                    value={POSITIONS[u.position] ? u.position : 'G'}
+                    onChange={(e) => {
+                      const nextPos = e.target.value;
+                      dispatch({ type: 'ADMIN_SET_USER_POS', uid: u.id, position: nextPos });
+                      toast(`${u.nickname} 선수의 포지션이 ${nextPos}(${POSITIONS[nextPos]?.name || nextPos})(으)로 즉시 변경되었습니다`, 'admin');
+                    }}
+                    className="rounded-lg border border-white/15 bg-ink px-2 py-1 text-[11px] font-extrabold outline-none transition focus:border-brand"
+                    style={{ color: posObj.color }}
+                  >
+                    {ADMIN_POS_KEYS.map((pk) => (
+                      <option key={pk} value={pk} className="bg-panel text-white">
+                        {pk} · {POSITIONS[pk].name}
+                      </option>
+                    ))}
+                  </select>
+                  {match.status !== 'finished' && (
+                    <button
+                      type="button"
+                      title={`${u.nickname} 참가 취소(명단 제외)`}
+                      onClick={() => {
+                        dispatch({ type: 'ADMIN_REMOVE_PARTICIPANT', matchId: match.id, uid: u.id });
+                        toast(`${u.nickname} 선수를 참가 명단에서 제외했습니다`, 'admin');
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 transition hover:bg-red-500/25 active:scale-90"
+                    >
+                      <Icon name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamAssignModal({ match, onClose, onStarted }) {
+  const { state, dispatch, toast } = useStore();
+  const N = (FORMATS[match.format] || FORMATS['5vs5 풀코트']).onCourt;
+  const [teams, setTeams] = useState(() => autoBalance(match.participants, state.users, state.meId));
+  const [starters, setStarters] = useState(() => {
+    const tb = autoBalance(match.participants, state.users, state.meId);
+    return {
+      A: pickDefaultStarters(tb.A, state.users, state.meId, N),
+      B: pickDefaultStarters(tb.B, state.users, state.meId, N),
+    };
+  });
+
+  useEffect(() => {
+    const tb = autoBalance(match.participants, state.users, state.meId);
+    setTeams(tb);
+    setStarters({
+      A: pickDefaultStarters(tb.A, state.users, state.meId, N),
+      B: pickDefaultStarters(tb.B, state.users, state.meId, N),
+    });
+  }, [(match.participants || []).join(','), N]);
+
+  const moveTeam = (id) => {
+    setTeams((t) => {
+      const fromA = t.A.includes(id);
+      const next = fromA ? { A: t.A.filter((x) => x !== id), B: [...t.B, id] } : { B: t.B.filter((x) => x !== id), A: [...t.A, id] };
+      setStarters((st) => {
+        const cleanA = st.A.filter((x) => next.A.includes(x));
+        const cleanB = st.B.filter((x) => next.B.includes(x));
+        if (fromA && cleanB.length < N && !cleanB.includes(id)) cleanB.push(id);
+        if (!fromA && cleanA.length < N && !cleanA.includes(id)) cleanA.push(id);
+        return { A: cleanA, B: cleanB };
+      });
+      return next;
+    });
+  };
+
+  const toggleStarter = (team, id) => {
+    setStarters((st) => {
+      const cur = st[team];
+      if (cur.includes(id)) {
+        return { ...st, [team]: cur.filter((x) => x !== id) };
+      }
+      if (cur.length >= N) {
+        return { ...st, [team]: [...cur.slice(0, N - 1), id] };
+      }
+      return { ...st, [team]: [...cur, id] };
+    });
+  };
+
+  const avg = (ids) => (ids.length ? Math.round(ids.reduce((s, id) => s + (state.users[id]?.rating || 1000), 0) / ids.length) : 0);
+  const totalAssigned = teams.A.length + teams.B.length;
+  const isUnderMin = totalAssigned < N * 2;
+  const fullValid = teams.A.length >= N && teams.B.length >= N && starters.A.length === N && starters.B.length === N;
+
+  // [1] 부족한 인원 게스트로 자동 채우고 경기 시작
+  const fillBotsAndStart = () => {
+    const currentIds = Array.from(new Set([...teams.A, ...teams.B, ...(match.participants || [])]));
+    const pool = Object.values(state.users)
+      .filter((u) => u && u.isBot && !currentIds.includes(u.id))
+      .map((u) => u.id);
+    pool.sort(() => Math.random() - 0.5);
+    const need = Math.max(0, N * 2 - currentIds.length);
+    const fullIds = [...currentIds, ...pool.slice(0, need)];
+    const fullTeams = autoBalance(fullIds, state.users, state.meId);
+    const fullStarters = {
+      A: pickDefaultStarters(fullTeams.A, state.users, state.meId, N),
+      B: pickDefaultStarters(fullTeams.B, state.users, state.meId, N),
+    };
+    dispatch({ type: 'START_GAME', matchId: match.id, teams: fullTeams, starters: fullStarters });
+    toast(`부족한 인원(${need}명)을 게스트로 자동 채워 ${N}:${N} 경기를 시작합니다!`, 'admin');
+    onStarted(match.id);
+  };
+
+  // [2] 현재 인원 그대로 경기 시작 (소수 인원 매치 및 정규 매치 모두 허용)
+  const startWithCurrentPlayers = () => {
+    if (totalAssigned === 0) {
+      return toast('참가 인원이 0명입니다. [부족한 인원 게스트로 자동 채우고 경기 시작]을 눌러주세요', 'error');
+    }
+    let finalTeams = { A: [...teams.A], B: [...teams.B] };
+    if (totalAssigned >= 2 && (finalTeams.A.length === 0 || finalTeams.B.length === 0)) {
+      finalTeams = autoBalance([...finalTeams.A, ...finalTeams.B], state.users, state.meId);
+    }
+    const cleanStA = starters.A.filter((id) => finalTeams.A.includes(id));
+    const cleanStB = starters.B.filter((id) => finalTeams.B.includes(id));
+    const finalStarters = {
+      A: cleanStA.length > 0 ? cleanStA.slice(0, N) : pickDefaultStarters(finalTeams.A, state.users, state.meId, Math.min(N, finalTeams.A.length)),
+      B: cleanStB.length > 0 ? cleanStB.slice(0, N) : pickDefaultStarters(finalTeams.B, state.users, state.meId, Math.min(N, finalTeams.B.length)),
+    };
+    dispatch({ type: 'START_GAME', matchId: match.id, teams: finalTeams, starters: finalStarters });
+    toast(`현재 인원(A팀 ${finalTeams.A.length}명 vs B팀 ${finalTeams.B.length}명)으로 경기를 시작합니다!`, 'admin');
+    onStarted(match.id);
+  };
+
+  const Col = ({ team }) => {
+    const ids = teams[team];
+    const stIds = starters[team];
+    const color = team === 'A' ? '#FF5500' : '#22D3EE';
+    const targetStCount = Math.min(N, ids.length);
+    return (
+      <div className="rounded-2xl border p-3" style={{ borderColor: `${color}44`, background: `${color}0A` }}>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-bebas text-2xl" style={{ color }}>TEAM {team}</span>
+            <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-extrabold ${stIds.length === targetStCount && targetStCount > 0 ? 'bg-neon/15 text-neon' : 'bg-brand/20 text-brand'}`}>
+              스타팅 {stIds.length}/{N}명
+            </span>
+          </div>
+          <div className="text-right text-[10px] text-white/45">총 {ids.length}명 · 평균 <b className="text-white">{avg(ids)}</b></div>
+        </div>
+        <div className="max-h-72 space-y-1.5 overflow-y-auto pr-0.5">
+          {ids.length === 0 && (
+            <div className="py-6 text-center text-xs text-white/35">배정된 선수가 없습니다</div>
+          )}
+          {ids.map((id) => {
+            const u = state.users[id];
+            if (!u) return null;
+            const isStarter = stIds.includes(id);
+            const posObj = POSITIONS[u.position] || POSITIONS.G;
+            return (
+              <div key={id} className={`flex items-center gap-1.5 rounded-xl border px-2 py-1.5 transition ${isStarter ? 'border-neon/40 bg-ink' : 'border-white/5 bg-ink/50 opacity-80'}`}>
+                <button type="button" onClick={() => toggleStarter(team, id)} title="스타팅 선발 체크"
+                  className={`flex h-6 shrink-0 items-center gap-1 rounded-lg px-2 text-[10px] font-extrabold transition ${isStarter ? 'bg-neon text-black' : 'bg-white/10 text-white/50 hover:text-white'}`}>
+                  {isStarter ? '★ 선발' : '벤치'}
+                </button>
+                <Avatar user={u} size={24} ring={!u.isBot} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    {!u.isBot && <span className="shrink-0 rounded bg-neon/20 px-1 py-0.5 text-[9px] font-black text-neon">유저</span>}
+                    <span className="truncate text-xs font-bold">{u.nickname}</span>
+                  </div>
+                </div>
+                <select
+                  aria-label={`${u.nickname} 포지션 변경`}
+                  value={POSITIONS[u.position] ? u.position : 'G'}
+                  onChange={(e) => {
+                    const nextPos = e.target.value;
+                    dispatch({ type: 'ADMIN_SET_USER_POS', uid: u.id, position: nextPos });
+                    toast(`${u.nickname} 포지션 → ${nextPos}`, 'admin');
+                  }}
+                  className="rounded-md border border-white/10 bg-panel px-1.5 py-0.5 text-[10px] font-extrabold outline-none focus:border-brand"
+                  style={{ color: posObj.color }}
+                >
+                  {ADMIN_POS_KEYS.map((pk) => (
+                    <option key={pk} value={pk} className="bg-panel text-white">{pk}</option>
+                  ))}
+                </select>
+                <span className="font-bebas text-sm text-white/60">{u.rating}</span>
+                <button type="button" onClick={() => moveTeam(id)} title="반대 팀으로 이동"
+                  className="rounded-lg bg-white/5 p-1 text-white/40 hover:bg-white/15 hover:text-white">
+                  <Icon name={team === 'A' ? 'ChevronRight' : 'ChevronLeft'} size={13} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+  return (
+    <Modal open onClose={onClose} wide title="팀 배정 · 포지션 조정 · 스타팅 선택 & 경기 시작">
+      <div className="p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-white/55">
+          <span className="flex items-center gap-1.5">
+            <Icon name="Scale" size={14} className="text-neon" />
+            각 선수의 <b className="text-brand">포지션 드롭다운</b>과 <b className="text-neon">★ 선발</b> 여부를 즉시 조정할 수 있습니다.
+          </span>
+          <span className="font-bold text-white/60">현재 참가자 {match.participants.length}명 / 권장 {N * 2}명</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><Col team="A" /><Col team="B" /></div>
+
+        {/* 정원(N*2명) 미달 시 2가지 경기 시작 옵션 모두 제공 */}
+        {isUnderMin && (
+          <div className="mt-4 rounded-2xl border border-brand/40 bg-brand/10 p-3.5">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-extrabold text-brand">
+              <Icon name="Sparkles" size={15} />
+              현재 신청 인원({totalAssigned}명)이 정규 인원({N * 2}명)보다 적습니다. 원하는 방식으로 즉시 경기를 시작하세요:
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Btn variant="primary" className="w-full py-2.5 text-xs" onClick={fillBotsAndStart}>
+                <Icon name="UserPlus" size={15} /> 부족한 인원 게스트로 자동 채우고 경기 시작
+              </Btn>
+              <Btn variant="neon" className="w-full py-2.5 text-xs" disabled={totalAssigned === 0} onClick={startWithCurrentPlayers}>
+                <Icon name="Play" size={15} fill="#000" /> 현재 인원 그대로 경기 시작 (소수 인원 매치 허용)
+              </Btn>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Btn variant="ghost" className="py-2.5" onClick={() => {
+            const tb = autoBalance(match.participants, state.users, state.meId);
+            setTeams(tb);
+            setStarters({ A: pickDefaultStarters(tb.A, state.users, state.meId, N), B: pickDefaultStarters(tb.B, state.users, state.meId, N) });
+          }}><Icon name="Shuffle" size={15} /> 자동 밸런싱 &amp; 선발 리셋</Btn>
+          {(isUnlimitedMatch(match) || match.participants.length < match.maxPlayers || match.participants.length < N * 2) && (
+            <Btn variant="ghost" className="py-2.5" onClick={() => dispatch({ type: 'FILL_BOTS', matchId: match.id, upTo: Math.max(match.participants.length + 2, N * 2) })}>
+              <Icon name="UserPlus" size={15} /> 게스트 선수 추가
+            </Btn>
+          )}
+          <Btn variant="neon" className="flex-1 py-2.5" disabled={totalAssigned === 0 && !fullValid} onClick={startWithCurrentPlayers}>
+            <Icon name="Play" size={15} fill="#000" /> 경기 시작 · 스탯 패드 열기
+          </Btn>
+        </div>
+        <p className="mt-2 text-[11px] text-white/35">체크된 ★ 선발 선수가 코트에 먼저 투입되며, 나머지 인원은 벤치 멤버로 등록되어 경기 중 언제든 1초 교체할 수 있습니다.</p>
+      </div>
+    </Modal>
+  );
+}
+
+function ConsolePage({ goStatPad }) {
+  const { state, dispatch, toast } = useStore();
+  const [assign, setAssign] = useState(null);
+  const [showForm, setShowForm] = useState(true);
+  const [view, setView] = useState(null);
+  const list = [...state.matches].sort((a, b) => {
+    const o = { live: 0, open: 1, closed: 1, finished: 2, cancelled: 3 };
+    if (o[a.status] !== o[b.status]) return o[a.status] - o[b.status];
+    const ma = isManagerMatch(a) ? 1 : 0;
+    const mb = isManagerMatch(b) ? 1 : 0;
+    if (ma !== mb) return mb - ma;
+    if (ma && mb) return (b.createdAt || 0) - (a.createdAt || 0);
+    return a.datetime - b.datetime;
+  });
+  const assignMatch = state.matches.find((m) => m.id === assign);
+  const viewMatch = state.matches.find((m) => m.id === view);
+  const setStatus = (m, status) => {
+    if (status === 'cancelled') {
+      const live = m.status === 'live';
+      if (!confirm(`[${m.title}] 매치를 ${live ? '중단' : '취소'}할까요?${live ? '\n입력 중인 스탯은 공식 기록으로 반영되지 않습니다.' : '\n유저 로비에서 취소 상태로 표시됩니다.'}`)) return;
+    }
+    dispatch({ type: 'SET_STATUS', matchId: m.id, status });
+    toast({ closed: '참가 신청을 마감했습니다 (유저 앱에 즉시 반영)', open: '참가 신청을 다시 받습니다', cancelled: m.status === 'live' ? '진행 중인 경기를 중단했습니다' : '매치를 취소했습니다' }[status], 'admin');
+  };
+  const stats = [
+    ['예정 매치 (모집·마감)', state.matches.filter((m) => m.status === 'open' || m.status === 'closed').length, 'CalendarClock', '#00FF66'],
+    ['진행중 LIVE', state.matches.filter((m) => m.status === 'live').length, 'Radio', '#EF4444'],
+    ['완료 경기', state.matches.filter((m) => m.status === 'finished').length, 'CircleCheck', '#38BDF8'],
+    ['등록 선수', Object.keys(state.users).length, 'Users', '#FF5500'],
+  ];
+  return (
+    <AdminGuard>
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {stats.map(([k, v, ic, c]) => (
+            <Card key={k} className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: `${c}1A`, color: c }}><Icon name={ic} size={20} /></div>
+              <div><div className="font-bebas text-3xl leading-none">{v}</div><div className="text-[11px] text-white/45">{k}</div></div>
+            </Card>
+          ))}
+        </div>
+
+        <Card className="p-4">
+          <button onClick={() => setShowForm(!showForm)} className="flex w-full items-center justify-between">
+            <div className="flex items-center gap-2 font-extrabold"><Icon name="CalendarPlus" size={18} className="text-brand" /> 공식 매치 개설</div>
+            <Icon name="ChevronDown" size={18} className={`text-white/40 transition ${showForm ? 'rotate-180' : ''}`} />
+          </button>
+          {showForm && <div className="mt-4"><CreateMatchForm /></div>}
+        </Card>
+
+        <div>
+          <SectionTitle icon="ClipboardList" title="매치 운영 현황" sub="신청 인원 확인 → 팀 배정 → 경기 시작 → 스탯 패드 기록 → 전송" />
+          <div className="grid gap-3 md:grid-cols-2">
+            {list.map((m) => {
+              const st = matchStatus(m);
+              const fm = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
+              const meIn = m.participants.includes(state.meId);
+              return (
+                <Card key={m.id} className={`p-4 ${m.status === 'live' ? '!border-red-500/40' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className={`rounded border px-1.5 py-0.5 text-[10px] font-extrabold ${st.cls}`}>{st.label}</span>
+                        {isManagerMatch(m) && <span className="rounded border border-brand/50 bg-brand/20 px-1.5 py-0.5 text-[10px] font-black text-brand">✨ 신규 개설</span>}
+                        {meIn && <span className="rounded bg-neon/15 px-1.5 py-0.5 text-[10px] font-extrabold text-neon">내 캐릭터 참가</span>}
+                      </div>
+                      <div className="truncate font-extrabold">{m.title}</div>
+                      <div className="mt-0.5 text-[11px] font-semibold text-white/60">{fmtDateFull(m.datetime)} · {m.court}</div>
+                      <div className="truncate text-[11px] text-white/45"><Icon name="MapPin" size={11} className="mr-0.5 inline text-brand" />{getCourtAddress(m, state)}</div>
+                      <div className="text-[11px] text-white/45">{m.format} · {m.manager} · {isUnlimitedMatch(m) ? <span className="font-bold text-neon">참가 {m.participants.length}명 · 인원 무제한(오픈런)</span> : `${m.participants.length}/${m.maxPlayers}명`}</div>
+                    </div>
+                    {['open', 'closed', 'cancelled'].includes(m.status) && (
+                      <button onClick={() => { if (confirm('이 매치를 삭제할까요?')) { dispatch({ type: 'DELETE_MATCH', matchId: m.id }); toast('매치가 삭제되었습니다', 'admin'); } }} title="매치 삭제" className="rounded-lg p-1.5 text-white/30 hover:bg-red-500/10 hover:text-red-400"><Icon name="Trash2" size={15} /></button>
+                    )}
+                  </div>
+
+                  {/* 실시간 참가 신청자 명단 & 포지션 현황판 상시 노출 */}
+                  <MatchParticipantRoster match={m} />
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {m.status === 'open' && (isUnlimitedMatch(m) || m.participants.length < m.maxPlayers) && (
+                      <Btn variant="ghost" className="px-3 py-2 text-xs" onClick={() => { dispatch({ type: 'FILL_BOTS', matchId: m.id }); toast('게스트 선수로 인원을 추가했습니다', 'admin'); }}><Icon name="UserPlus" size={14} /> 게스트 채우기</Btn>
+                    )}
+                    {m.status === 'open' && <Btn variant="ghost" className="px-3 py-2 text-xs" onClick={() => setStatus(m, 'closed')}><Icon name="Lock" size={14} /> 신청 마감</Btn>}
+                    {m.status === 'closed' && <Btn variant="ghost" className="px-3 py-2 text-xs" onClick={() => setStatus(m, 'open')}><Icon name="LockOpen" size={14} /> 모집 재개</Btn>}
+                    {(m.status === 'open' || m.status === 'closed') && (
+                      <Btn className="flex-1 px-3 py-2 text-xs" onClick={() => setAssign(m.id)}><Icon name="Swords" size={14} /> 팀 배정 &amp; 경기 시작</Btn>
+                    )}
+                    {m.status === 'live' && <Btn variant="neon" className="flex-1 px-3 py-2 text-xs" onClick={() => goStatPad(m.id)}><Icon name="Gauge" size={14} /> 스탯 패드로 이동</Btn>}
+                    {['open', 'closed', 'live'].includes(m.status) && (
+                      <Btn variant="danger" className="px-3 py-2 text-xs" onClick={() => setStatus(m, 'cancelled')}><Icon name="Ban" size={14} /> {m.status === 'live' ? '경기 중단' : '경기 취소'}</Btn>
+                    )}
+                    {m.status === 'finished' && <Btn variant="ghost" className="flex-1 px-3 py-2 text-xs" onClick={() => setView(m.id)}><Icon name="FileChartColumn" size={14} /> 공식 결과 보기 ({m.result.scoreA}:{m.result.scoreB})</Btn>}
+                    {m.status === 'cancelled' && <div className="flex-1 rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-center text-xs font-bold text-red-400">취소된 매치 · 유저 로비 비노출</div>}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {assignMatch && (assignMatch.status === 'open' || assignMatch.status === 'closed') && <TeamAssignModal match={assignMatch} onClose={() => setAssign(null)} onStarted={(id) => { setAssign(null); goStatPad(id); }} />}
+      <Modal open={!!viewMatch} onClose={() => setView(null)} wide title="공식 경기 결과">{viewMatch && viewMatch.result && <ResultBody match={viewMatch} />}</Modal>
+    </AdminGuard>
+  );
+}
+
+/* =====================================================================
+ * 14. ADMIN: REAL-TIME TOUCH STAT PAD
+ * ===================================================================== */
+const PAD = [
+  { key: 'pts', amount: 1, label: '+1', kind: 'pts' },
+  { key: 'pts', amount: 2, label: '+2', kind: 'pts' },
+  { key: 'pts', amount: 3, label: '+3', kind: 'pts' },
+  { key: 'ast', amount: 1, label: 'AST', kind: 'pos' },
+  { key: 'reb', amount: 1, label: 'REB', kind: 'pos' },
+  { key: 'stl', amount: 1, label: 'STL', kind: 'pos' },
+  { key: 'blk', amount: 1, label: 'BLK', kind: 'pos' },
+  { key: 'tov', amount: 1, label: 'TOV', kind: 'neg' },
+  { key: 'pf', amount: 1, label: 'PF', kind: 'neg' },
+];
+const PAD_CLS = {
+  pts: 'bg-brand text-black shadow-[0_0_16px_-4px_rgba(255,85,0,.8)] hover:brightness-110',
+  pos: 'bg-neon/10 text-neon border border-neon/40 hover:bg-neon/20',
+  neg: 'bg-red-500/10 text-red-400 border border-red-500/40 hover:bg-red-500/20',
+};
+
+function PlayerPadCard({ user, stats, jersey, team, onStat, onSubClick, subMode, canSub, isMe }) {
+  const [fx, setFx] = useState([]);
+  const pf = stats.pf;
+  const trouble = pf >= 4;
+  const fouledOut = pf >= 5;
+  const abei = calcABEi(stats);
+  const color = team === 'A' ? '#FF5500' : '#22D3EE';
+  const press = (b) => {
+    onStat(user.id, b.key, b.amount, b.label);
+    vibrate(b.kind === 'neg' ? 30 : 10);
+    const id = Math.random();
+    setFx((f) => [...f.slice(-3), { id, text: b.kind === 'pts' ? b.label : `+${b.label}`, kind: b.kind }]);
+    setTimeout(() => setFx((f) => f.filter((x) => x.id !== id)), 850);
+  };
+  return (
+    <div className={`relative rounded-2xl border p-2.5 transition ${trouble ? 'foul-alert border-red-500 bg-red-500/[.08]' : subMode ? 'border-yellow-400/70 bg-yellow-400/[.06]' : 'border-white/[.07] bg-panel'}`}>
+      {fx.map((f) => (
+        <span key={f.id} className={`float-up pointer-events-none absolute left-1/2 top-3 z-10 font-bebas text-3xl ${f.kind === 'pts' ? 'text-brand text-glow-orange' : f.kind === 'pos' ? 'text-neon text-glow-neon' : 'text-red-400'}`}>{f.text}</span>
+      ))}
+      <div className="mb-2 flex items-center gap-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-bebas text-xl text-black" style={{ background: color }}>{jersey}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-extrabold">{user.nickname}</span>
+            {isMe && <span className="rounded bg-neon px-1 text-[9px] font-black text-black">나</span>}
+            <span className="text-[10px] font-bold" style={{ color: (POSITIONS[user.position] || POSITIONS.G).color }}>{user.position}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-2 font-mono text-[10px] text-white/50">
+            <span><b className="text-brand">{stats.pts}</b>P</span><span>{stats.reb}R</span><span>{stats.ast}A</span><span>{stats.stl}S</span><span>{stats.blk}B</span>
+            <span className="text-red-400/80">{stats.tov}TO</span>
+            <span className={trouble ? 'font-black text-red-400' : 'text-red-400/80'}>{stats.pf}PF</span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="font-bebas text-lg leading-none text-white/80">{abei.toFixed(1)}</div>
+          <div className="text-[8px] font-bold text-white/35">ABEi</div>
+        </div>
+        <button onClick={onSubClick} disabled={!canSub} title="교체"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition disabled:opacity-25 ${subMode ? 'border-yellow-400 bg-yellow-400 text-black' : 'border-white/10 bg-white/5 text-white/60 hover:text-white'}`}>
+          <Icon name="ArrowLeftRight" size={15} />
+        </button>
+      </div>
+      {trouble && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-red-500/20 px-2 py-1 text-[11px] font-extrabold text-red-300">
+          <Icon name="TriangleAlert" size={13} /> {fouledOut ? `5반칙 퇴장 — 즉시 교체 필요 (PF ${pf})` : `파울 트러블 경고 (PF ${pf}) — 교체 고려`}
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-9">
+        {PAD.map((b) => (
+          <button key={b.label} onClick={() => press(b)}
+            className={`stat-btn h-12 rounded-xl text-sm font-black sm:h-14 ${b.kind === 'pts' ? 'font-bebas text-2xl' : ''} ${PAD_CLS[b.kind]} ${b.key === 'pf' && trouble ? '!bg-red-500 !text-pure' : ''}`}>
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TeamPanel({ m, team, subOut, setSubOut, onStat, className = '' }) {
+  const { state, dispatch, toast } = useStore();
+  const live = m.live;
+  const ids = live.teams[team];
+  const court = live.onCourt[team];
+  const bench = ids.filter((id) => !court.includes(id));
+  const color = team === 'A' ? '#FF5500' : '#22D3EE';
+  const score = ids.reduce((s, id) => s + live.stats[id].pts, 0);
+  const fouls = ids.reduce((s, id) => s + live.stats[id].pf, 0);
+  const jersey = (id) => JERSEYS[ids.indexOf(id) % JERSEYS.length];
+  const subActive = subOut && subOut.team === team;
+  const doSub = (inId) => {
+    dispatch({ type: 'SUB', matchId: m.id, team, outId: subOut.uid, inId });
+    toast(`교체: ${state.users[subOut.uid].nickname} OUT → ${state.users[inId].nickname} IN`, 'admin');
+    setSubOut(null);
+  };
+  return (
+    <div className={className}>
+      <div className="mb-2 flex items-center justify-between rounded-xl px-3 py-2" style={{ background: `${color}14`, border: `1px solid ${color}40` }}>
+        <div className="flex items-center gap-2"><span className="font-bebas text-2xl" style={{ color }}>TEAM {team}</span><span className="text-[10px] text-white/45">{ids.length}명 엔트리</span></div>
+        <div className="flex items-center gap-3 text-[11px] text-white/50"><span>팀파울 <b className={fouls >= 5 ? 'text-red-400' : 'text-white'}>{fouls}</b></span><span className="font-bebas text-2xl text-white">{score}</span></div>
+      </div>
+      <div className="space-y-2">
+        {court.map((id) => (
+          <PlayerPadCard key={id} user={state.users[id]} stats={live.stats[id]} jersey={jersey(id)} team={team} isMe={id === state.meId}
+            onStat={onStat} canSub={bench.length > 0} subMode={subActive && subOut.uid === id}
+            onSubClick={() => setSubOut(subActive && subOut.uid === id ? null : { team, uid: id })} />
+        ))}
+      </div>
+      <div className={`mt-2 rounded-2xl border p-2.5 ${subActive ? 'border-yellow-400/60 bg-yellow-400/[.05]' : 'border-white/[.06] bg-panel/60'}`}>
+        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-white/50">
+          <Icon name="Armchair" size={13} /> 벤치 ({bench.length})
+          {subActive && <span className="ml-auto animate-pulse text-yellow-300">↓ 투입할 선수를 선택하세요</span>}
+        </div>
+        {bench.length === 0 ? <div className="py-1 text-center text-[11px] text-white/30">벤치 멤버 없음</div> : (
+          <div className="grid grid-cols-2 gap-1.5">
+            {bench.map((id) => {
+              const u = state.users[id]; const s = live.stats[id];
+              return (
+                <button key={id} disabled={!subActive} onClick={() => doSub(id)}
+                  className={`flex items-center gap-2 rounded-xl px-2 py-1.5 text-left transition ${subActive ? 'bg-yellow-400/15 ring-1 ring-yellow-400/60 hover:bg-yellow-400/25' : 'bg-ink/60'}`}>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md font-bebas text-sm text-black" style={{ background: `${color}AA` }}>{jersey(id)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-bold">{u.nickname}{id === state.meId && <span className="text-neon"> (나)</span>}</span>
+                  <span className="font-mono text-[10px] text-white/40">{s.pts}P</span>
+                  {subActive && <Icon name="LogIn" size={13} className="text-yellow-300" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatPadPage({ matchId, setMatchId }) {
+  const { state, dispatch, toast, goDashboard } = useStore();
+  const lives = state.matches.filter((m) => m.status === 'live');
+  const m = lives.find((x) => x.id === matchId) || lives[0];
+  const [mobileTeam, setMobileTeam] = useState('A');
+  const [subOut, setSubOut] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [resultId, setResultId] = useState(null);
+  const [sec, setSec] = useState(600);
+  const [running, setRunning] = useState(false);
+  const [q, setQ] = useState(1);
+  const [bump, setBump] = useState({ A: 0, B: 0 });
+
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setSec((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  useEffect(() => { if (sec === 0) setRunning(false); }, [sec]);
+  useEffect(() => { setSubOut(null); }, [m && m.id]);
+
+  const resultMatch = state.matches.find((x) => x.id === resultId);
+
+  if (!m) {
+    return (
+      <AdminGuard>
+        <Card className="flex flex-col items-center gap-3 py-16 text-center">
+          <Icon name="Gauge" size={38} className="text-white/20" />
+          <div className="font-extrabold">진행 중인 경기가 없습니다</div>
+          <div className="text-xs text-white/45">[매치 콘솔]에서 팀 배정 후 경기를 시작하면 스탯 패드가 활성화됩니다.</div>
+        </Card>
+        <Modal open={!!resultMatch} onClose={() => setResultId(null)} wide title="🏁 공식 기록 전송 완료">
+          {resultMatch && resultMatch.result && <ResultBody match={resultMatch} onDashboard={() => { setResultId(null); goDashboard(); }} />}
+        </Modal>
+      </AdminGuard>
+    );
+  }
+
+  const live = m.live;
+  const score = (t) => live.teams[t].reduce((s, id) => s + live.stats[id].pts, 0);
+  const sA = score('A'), sB = score('B');
+  const lastAction = live.undo[live.undo.length - 1];
+  const actionLabel = (a) => {
+    const p = PAD.find((b) => b.key === a.key && b.amount === a.amount) || { label: STAT_LABEL[a.key] };
+    return `${state.users[a.uid].nickname} ${a.key === 'pts' ? `${p.label}점` : STAT_KO[a.key]}`;
+  };
+  const onStat = (uid, key, amount) => {
+    dispatch({ type: 'STAT', matchId: m.id, uid, key, amount });
+    if (key === 'pts') {
+      const t = live.teams.A.includes(uid) ? 'A' : 'B';
+      setBump((b) => ({ ...b, [t]: b[t] + 1 }));
+    }
+    if (key === 'pf' && live.stats[uid].pf + 1 === 4) toast(`⚠ ${state.users[uid].nickname} 파울 트러블 (4반칙)`, 'error');
+    if (key === 'pf' && live.stats[uid].pf + 1 === 5) toast(`🚫 ${state.users[uid].nickname} 5반칙 퇴장! 교체가 필요합니다`, 'error');
+  };
+  const undo = () => {
+    if (!lastAction) return;
+    dispatch({ type: 'UNDO', matchId: m.id });
+    toast(`입력 취소: ${actionLabel(lastAction)}`);
+    vibrate(20);
+  };
+  const submit = () => {
+    const id = m.id;
+    dispatch({ type: 'SUBMIT', matchId: id });
+    setConfirmOpen(false);
+    setRunning(false);
+    setResultId(id);
+    toast('공식 기록 전송 완료 · 알고리즘 엔진이 전체 선수 레이팅을 갱신했습니다', 'success');
+  };
+
+  return (
+    <AdminGuard>
+      <div className="space-y-3">
+        {lives.length > 1 && (
+          <div className="no-scrollbar flex gap-2 overflow-x-auto">
+            {lives.map((x) => (
+              <button key={x.id} onClick={() => setMatchId(x.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${x.id === m.id ? 'bg-brand text-black' : 'bg-white/5 text-white/60'}`}>● {x.title}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Central controller / scoreboard */}
+        <div className="sticky top-[86px] z-30 -mx-4 px-4 pb-1 pt-1">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-panel/95 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5 text-[10px] font-bold text-white/40">
+              <span className="flex items-center gap-1.5 truncate"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> LIVE · {m.title}</span>
+              <span className="hidden sm:inline">{m.court}</span>
+            </div>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2">
+              <div className="flex items-center justify-end gap-3">
+                <div className="text-right"><div className="font-bebas text-lg leading-none text-brand">TEAM A</div><div className="text-[10px] text-white/40">HOME</div></div>
+                <div key={`a${bump.A}`} className="score-bump w-[72px] text-center font-bebas text-6xl leading-none text-brand text-glow-orange sm:w-24 sm:text-7xl">{sA}</div>
+              </div>
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4].map((n) => (
+                    <button key={n} onClick={() => setQ(n)} className={`rounded px-1.5 text-[10px] font-black ${q === n ? 'bg-white text-ink' : 'text-white/35'}`}>{n}Q</button>
+                  ))}
+                </div>
+                <div className={`font-bebas text-3xl leading-none ${sec <= 60 ? 'text-red-400' : 'text-white'}`}>{pad2(Math.floor(sec / 60))}:{pad2(sec % 60)}</div>
+                <div className="flex gap-1">
+                  <button onClick={() => setRunning(!running)} className="rounded-md bg-white/10 p-1 hover:bg-white/20">{running ? <Icon name="Pause" size={13} /> : <Icon name="Play" size={13} />}</button>
+                  <button onClick={() => { setRunning(false); setSec(600); }} className="rounded-md bg-white/10 p-1 hover:bg-white/20"><Icon name="TimerReset" size={13} /></button>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div key={`b${bump.B}`} className="score-bump w-[72px] text-center font-bebas text-6xl leading-none text-teamb text-glow-cyan sm:w-24 sm:text-7xl">{sB}</div>
+                <div><div className="font-bebas text-lg leading-none text-teamb">TEAM B</div><div className="text-[10px] text-white/40">AWAY</div></div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 border-t border-white/5 px-3 py-2">
+              <button onClick={undo} disabled={!lastAction}
+                className="flex shrink-0 items-center gap-1.5 rounded-xl border border-yellow-400/40 bg-yellow-400/10 px-3 py-2.5 text-xs font-extrabold text-yellow-300 transition hover:bg-yellow-400/20 active:scale-95 disabled:opacity-30">
+                <Icon name="Undo2" size={15} /> <span className="hidden sm:inline">직전 입력 취소</span><span className="sm:hidden">취소</span>
+                <span className="rounded bg-yellow-400/20 px-1 font-mono text-[10px]">{live.undo.length}</span>
+              </button>
+              <div className="min-w-0 flex-1 truncate text-center text-[11px] text-white/45">
+                {lastAction ? <>최근: <b className="text-white/80">{actionLabel(lastAction)}</b></> : '입력 대기 중 · 버튼을 탭해 기록하세요'}
+              </div>
+              <button onClick={() => setConfirmOpen(true)}
+                className="flex shrink-0 items-center gap-1.5 rounded-xl bg-neon px-3 py-2.5 text-xs font-black text-black transition glow-neon hover:brightness-110 active:scale-95">
+                <Icon name="Save" size={15} /> <span className="hidden sm:inline">경기 종료 및 공식 기록 전송</span><span className="sm:hidden">종료·전송</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile/portrait team switcher */}
+        <div className="grid grid-cols-2 gap-2 lg:hidden">
+          {['A', 'B'].map((t) => (
+            <button key={t} onClick={() => setMobileTeam(t)}
+              className={`rounded-xl py-2.5 font-bebas text-xl transition ${mobileTeam === t ? (t === 'A' ? 'bg-brand text-black' : 'bg-teamb text-black') : 'bg-white/5 text-white/50'}`}>
+              TEAM {t} · {t === 'A' ? sA : sB}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TeamPanel m={m} team="A" subOut={subOut} setSubOut={setSubOut} onStat={onStat} className={mobileTeam === 'A' ? '' : 'hidden lg:block'} />
+          <TeamPanel m={m} team="B" subOut={subOut} setSubOut={setSubOut} onStat={onStat} className={mobileTeam === 'B' ? '' : 'hidden lg:block'} />
+        </div>
+        <p className="pb-2 text-center text-[11px] text-white/30">💡 태블릿 가로 모드에서 양 팀 패드가 동시에 표시됩니다 · 모든 입력은 실시간 저장 (새로고침해도 유지)</p>
+      </div>
+
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="경기 종료 및 공식 기록 전송">
+        <div className="p-5">
+          <div className="flex items-center justify-center gap-6 py-2">
+            <div className="text-center"><div className="font-bebas text-lg text-brand">TEAM A</div><div className="font-bebas text-6xl leading-none">{sA}</div></div>
+            <div className="font-bebas text-2xl text-white/30">VS</div>
+            <div className="text-center"><div className="font-bebas text-lg text-teamb">TEAM B</div><div className="font-bebas text-6xl leading-none">{sB}</div></div>
+          </div>
+          <div className="mt-2 text-center text-sm font-bold">{sA === sB ? '무승부로 기록됩니다' : `TEAM ${sA > sB ? 'A' : 'B'} 승리`}</div>
+          <div className="mt-4 space-y-1.5 rounded-xl bg-ink p-3 text-[11px] text-white/55">
+            <div className="flex gap-2"><Icon name="Cpu" size={13} className="text-neon" /> 전송 즉시 아래 파이프라인이 실행됩니다</div>
+            <div>① 전 선수 ABEi 산출 → ② 팀 평균(실제 출전 인원) 대비 가중치 0.5~1.5</div>
+            <div>③ 승리 +25×w / 패배 −20÷w 레이팅 갱신 → ④ 티어 · 칭호 자동 갱신</div>
+            <div className="text-yellow-300/80">⚠ 전송 후에는 수정할 수 없는 공식 기록으로 확정됩니다.</div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Btn variant="ghost" onClick={() => setConfirmOpen(false)}>계속 기록</Btn>
+            <Btn variant="neon" onClick={submit}><Icon name="Send" size={15} /> 공식 기록 전송</Btn>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={!!resultMatch} onClose={() => setResultId(null)} wide title="🏁 공식 기록 전송 완료">
+        {resultMatch && resultMatch.result && <ResultBody match={resultMatch} onDashboard={() => { setResultId(null); goDashboard(); }} />}
+      </Modal>
+    </AdminGuard>
+  );
+}
+
+/* =====================================================================
+ * 15. RESULT VIEW & RECORDS
+ * ===================================================================== */
+function ResultBody({ match, onDashboard }) {
+  const { state } = useStore();
+  const r = match.result;
+  const meRow = r.rows.find((x) => x.id === state.meId);
+  return (
+    <div className="p-5">
+      <div className="flex items-center justify-center gap-5">
+        <div className="text-center"><div className="font-bebas text-lg text-brand">TEAM A</div><div className={`font-bebas text-6xl leading-none ${r.winner === 'A' ? 'text-white' : 'text-white/40'}`}>{r.scoreA}</div>{r.winner === 'A' && <div className="text-[10px] font-black text-neon">WIN</div>}</div>
+        <div className="text-center"><div className="font-bebas text-xl text-white/30">FINAL</div><div className="text-[10px] text-white/35">{fmtShort(match.datetime)}</div></div>
+        <div className="text-center"><div className="font-bebas text-lg text-teamb">TEAM B</div><div className={`font-bebas text-6xl leading-none ${r.winner === 'B' ? 'text-white' : 'text-white/40'}`}>{r.scoreB}</div>{r.winner === 'B' && <div className="text-[10px] font-black text-neon">WIN</div>}</div>
+      </div>
+      {meRow && (
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-neon/30 bg-neon/[.06] p-3">
+          <Avatar user={state.users[state.meId]} size={36} ring />
+          <div className="min-w-0 flex-1 text-xs">
+            <div className="font-extrabold">내 캐릭터 결과 · {meRow.result === 'W' ? '승리' : meRow.result === 'L' ? '패배' : '무승부'}</div>
+            <div className="text-white/50">ABEi {meRow.abei.toFixed(1)} · 가중치 ×{meRow.weight.toFixed(2)} · {meRow.before} → <b className="text-white">{meRow.after}</b>{meRow.tierAfter !== meRow.tierBefore && <b className="ml-1 text-neon">🚀 {getTier(meRow.after).name} 승급!</b>}</div>
+          </div>
+          <DeltaChip delta={meRow.delta} />
+        </div>
+      )}
+      {['A', 'B'].map((t) => (
+        <div key={t} className="mt-4">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-bold">
+            <span className={t === 'A' ? 'text-brand' : 'text-teamb'}>TEAM {t} {r.winner === t ? '· 승리 🏆' : r.winner === 'D' ? '· 무승부' : '· 패배'}</span>
+            <span className="text-white/40">팀 평균 ABEi {r.teamAvgs ? r.teamAvgs[t].toFixed(2) : '-'} ({r.rows.filter((x) => x.team === t).length}명)</span>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-white/5">
+            <table className="w-full min-w-[560px] text-[11px]">
+              <thead className="bg-white/[.03] text-white/40">
+                <tr>{['선수', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'ABEi', 'weight', 'Δ PT', '레이팅'].map((h) => <th key={h} className="px-2 py-2 text-center font-bold first:text-left">{h}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {r.rows.filter((x) => x.team === t).sort((a, b) => b.delta - a.delta).map((x) => (
+                  <tr key={x.id} className={x.id === state.meId ? 'bg-neon/[.06]' : ''}>
+                    <td className="px-2 py-2 font-bold"><span className="whitespace-nowrap">{x.nickname}{x.id === state.meId && <span className="ml-1 text-neon">(나)</span>}</span></td>
+                    {STAT_KEYS.map((k) => <td key={k} className={`px-2 py-2 text-center font-mono ${k === 'pts' ? 'font-bold text-brand' : (k === 'pf' && x.stats.pf >= 4) ? 'text-red-400' : 'text-white/70'}`}>{x.stats[k]}</td>)}
+                    <td className="px-2 py-2 text-center font-mono font-bold">{x.abei.toFixed(1)}</td>
+                    <td className="px-2 py-2 text-center font-mono text-yellow-300">×{x.weight.toFixed(2)}</td>
+                    <td className={`px-2 py-2 text-center font-bebas text-base ${x.delta >= 0 ? 'text-neon' : 'text-red-400'}`}>{signed(x.delta)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-center"><span className="font-bebas text-base">{x.after}</span> {x.tierAfter !== x.tierBefore && <span className="text-[9px] font-black" style={{ color: getTier(x.after).color }}>{tierIndex(x.tierAfter) > tierIndex(x.tierBefore) ? '▲' : '▼'}{getTier(x.after).name}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+      <div className="mt-4 rounded-xl bg-ink p-3 font-mono text-[10px] leading-relaxed text-white/45">
+        ABEi = PTS + 1.5·REB + 2·AST + 2·STL + 2·BLK − 2·TOV − PF<br />
+        weight = clip(ABEi ÷ 팀평균ABEi, 0.5, 1.5) · 승리 Δ = +25 × w · 패배 Δ = −20 ÷ w
+      </div>
+      {onDashboard && meRow && (
+        <Btn variant="neon" className="mt-4 w-full py-3.5" onClick={onDashboard}><Icon name="ChartLine" size={16} /> 유저 앱에서 내 대시보드 확인하기 <Icon name="ExternalLink" size={14} /></Btn>
+      )}
+    </div>
+  );
+}
+
+function RecordsPage() {
+  const { state } = useStore();
+  const done = state.matches.filter((m) => m.status === 'finished').sort((a, b) => (b.result?.submittedAt || 0) - (a.result?.submittedAt || 0));
+  const [open, setOpen] = useState(done[0]?.id || null);
+  return (
+    <AdminGuard>
+      <div className="space-y-4">
+        <Card className="p-4">
+          <SectionTitle icon="Cpu" title="코어 알고리즘 엔진 명세" sub="ABEi + TrueSkill 기반 다이내믹 레이팅" />
+          <div className="grid gap-2 text-[11px] md:grid-cols-4">
+            {[
+              ['① ABEi 산출', 'PTS + 1.5·REB + 2·AST + 2·STL + 2·BLK − 2·TOV − 1·PF'],
+              ['② 팀 평균 · 가중치', 'Σ ABEi ÷ 실제 출전 인원 → w = clip(개인 ÷ 평균, 0.5, 1.5)'],
+              ['③ 레이팅 갱신', '승리 +25 × w (하드캐리 보상) · 패배 −20 ÷ w (스탯 손실 방어)'],
+              ['④ 티어 · 칭호', TIERS.map((t) => `${t.name} ${t.min}+`).join(' → ')],
+            ].map(([k, v]) => (
+              <div key={k} className="rounded-xl bg-ink/70 p-3"><div className="mb-1 font-extrabold text-brand">{k}</div><div className="font-mono leading-relaxed text-white/60">{v}</div></div>
+            ))}
+          </div>
+        </Card>
+        <SectionTitle icon="History" title="공식 경기 기록 로그" sub={`총 ${done.length}경기`} />
+        {done.length === 0 && <Card className="py-12 text-center text-sm text-white/40">아직 전송된 공식 기록이 없습니다</Card>}
+        {done.map((m) => (
+          <Card key={m.id} className="overflow-hidden">
+            <button onClick={() => setOpen(open === m.id ? null : m.id)} className="flex w-full items-center gap-3 p-4 text-left">
+              <div className="font-bebas text-3xl"><span className="text-brand">{m.result.scoreA}</span><span className="text-white/30">:</span><span className="text-teamb">{m.result.scoreB}</span></div>
+              <div className="min-w-0 flex-1"><div className="truncate font-bold">{m.title}</div><div className="text-[11px] text-white/40">{fmtDateFull(m.datetime)} · 전송 {fmtTime(m.result.submittedAt)} · {m.result.rows.length}명 갱신</div></div>
+              <Icon name="ChevronDown" size={18} className={`text-white/40 transition ${open === m.id ? 'rotate-180' : ''}`} />
+            </button>
+            {open === m.id && <div className="border-t border-white/5"><ResultBody match={m} /></div>}
+          </Card>
+        ))}
+      </div>
+    </AdminGuard>
+  );
+}
+
+/* =====================================================================
+ * 16. APP ROOT (매니저 콘솔 · 다크/라이트 테마 지원)
+ * ===================================================================== */
+function AdminApp() {
+  const [state, dispatch] = useReducer(reducer, null, loadState);
+  const [authed, setAuthed] = useState(() => { try { return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1'; } catch (e) { return false; } });
+  const [tab, setTabRaw] = useState('console');
+  const [statMatchId, setStatMatchId] = useState(null);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('gt_theme') === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; } });
+  const [toasts, setToasts] = useState([]);
+
+  useSharedPersistence(state, dispatch, setTheme);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('gt_theme', theme); } catch (e) {}
+    const meta = document.getElementById('meta-theme');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#F8FAFC' : '#121212');
+  }, [theme]);
+
+  const toast = useCallback((msg, type = 'info') => {
+    const id = Math.random();
+    setToasts((t) => [...t.slice(-2), { id, msg, type }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600);
+  }, []);
+  const setTab = useCallback((t) => { setTabRaw(t); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+  const goStatPad = (id) => { setStatMatchId(id); setTab('statpad'); };
+  // 결과 확인: 유저 앱(index.html)의 마이페이지를 별도 탭으로 열기 (같은 탭 이름 재사용)
+  const goDashboard = useCallback(() => { window.open('index.html#my', 'garbagetime_user'); }, []);
+  const onAuth = useCallback(() => {
+    try { sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); } catch (e) {}
+    setAuthed(true);
+    toast('직원 인증 완료 · 백오피스 권한이 활성화되었습니다', 'admin');
+  }, []);
+  const lock = () => {
+    try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch (e) {}
+    setAuthed(false);
+  };
+
+  const ctx = { state, dispatch, mode: 'admin', tab, setTab, toast, goDashboard, theme, setTheme };
+
+  let screen;
+  if (!authed) screen = <PinGate onSuccess={onAuth} />;
+  else {
+    let page;
+    if (tab === 'statpad') page = <StatPadPage matchId={statMatchId} setMatchId={setStatMatchId} />;
+    else if (tab === 'records') page = <RecordsPage />;
+    else page = <ConsolePage goStatPad={goStatPad} />;
+    screen = (
+      <div className="court-bg min-h-[100dvh]">
+        <AdminHeader onLock={lock} />
+        <main key={tab} className="fade-in mx-auto max-w-7xl px-4 pb-28 pt-4">{page}</main>
+        <AdminNav />
+      </div>
+    );
+  }
+
+  return (
+    <Store.Provider value={ctx}>
+      {screen}
+      <Toasts items={toasts} />
+    </Store.Provider>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{ padding: 24, color: '#fff', background: '#121212', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+          <h2 style={{ color: '#FF5500' }}>문제가 발생했습니다</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, opacity: .7 }}>{String(this.state.err && this.state.err.stack || this.state.err)}</pre>
+          <button style={{ marginTop: 12, padding: '10px 16px', background: '#FF5500', border: 0, borderRadius: 10, fontWeight: 800 }}
+            onClick={() => { localStorage.removeItem(STORAGE_KEY); location.reload(); }}>데이터 초기화 후 새로고침</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><AdminApp /></ErrorBoundary>);
+</script>
+</body>
+</html>

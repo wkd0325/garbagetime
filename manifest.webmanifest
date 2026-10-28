@@ -1,0 +1,14 @@
+{
+  "name": "가비지타임 Garbage Time",
+  "short_name": "가비지타임",
+  "description": "아마추어 농구 소셜 매칭 & 데이터 기반 티어 플랫폼",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
