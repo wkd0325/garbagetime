@@ -1397,6 +1397,59 @@ function ThemeToggle() {
   );
 }
 
+// 순수 스포츠 그래픽 헬퍼: 선수 고유 등번호(Jersey #), 저지 뱃지, 코트 바닥 라인 SVG 워터마크 (인물 사진 배제)
+const JERSEY_POOL = ['00', '01', '03', '07', '10', '11', '13', '15', '21', '23', '24', '30', '32', '33', '34', '45', '77', '99'];
+function getJerseyNum(user) {
+  if (!user) return '23';
+  if (user.jersey !== undefined && user.jersey !== null && String(user.jersey).trim()) return String(user.jersey);
+  const s = `${user.id || ''}:${user.nickname || ''}:${user.position || ''}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return JERSEY_POOL[h % JERSEY_POOL.length];
+}
+
+function JerseyBadge({ user, size = 'sm', className = '' }) {
+  if (!user) return null;
+  const p = POSITIONS[user.position] || POSITIONS.G;
+  const num = getJerseyNum(user);
+  const lg = size === 'lg';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-lg font-bebas leading-none tracking-wider ${lg ? 'px-2.5 py-1 text-base' : 'px-1.5 py-0.5 text-xs'} ${className}`}
+      style={{ color: p.color, background: `${p.color}1C`, border: `1px solid ${p.color}55` }}
+      title={`등번호 #${num} · ${p.name}`}
+    >
+      <svg viewBox="0 0 24 24" width={lg ? 13 : 10} height={lg ? 13 : 10} fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 3h3a3 3 0 0 0 6 0h3l3 5-3 2v11H6V10L3 8l3-5Z" />
+      </svg>
+      <span>#{num}</span>
+    </span>
+  );
+}
+
+function CourtLinesSvg({ color = '#FF5500', opacity = 0.1, className = '' }) {
+  return (
+    <svg
+      viewBox="0 0 400 200"
+      fill="none"
+      className={`pointer-events-none select-none ${className}`}
+      style={{ opacity }}
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <rect x="6" y="6" width="388" height="188" rx="14" stroke={color} strokeWidth="2" />
+      <line x1="200" y1="6" x2="200" y2="194" stroke={color} strokeWidth="1.8" strokeDasharray="6 4" />
+      <circle cx="200" cy="100" r="32" stroke={color} strokeWidth="2" />
+      <circle cx="200" cy="100" r="5" fill={color} />
+      <rect x="6" y="54" width="74" height="92" stroke={color} strokeWidth="1.8" />
+      <circle cx="80" cy="100" r="24" stroke={color} strokeWidth="1.6" strokeDasharray="5 4" />
+      <path d="M 6 22 L 52 22 A 84 84 0 0 1 52 178 L 6 178" stroke={color} strokeWidth="2" />
+      <rect x="320" y="54" width="74" height="92" stroke={color} strokeWidth="1.8" />
+      <circle cx="320" cy="100" r="24" stroke={color} strokeWidth="1.6" strokeDasharray="5 4" />
+      <path d="M 394 22 L 348 22 A 84 84 0 0 0 348 178 L 394 178" stroke={color} strokeWidth="2" />
+    </svg>
+  );
+}
+
 // 체육관 상세 도로명 주소 + [주소 복사] / [네이버 지도] / [카카오맵] 액션 바
 function CourtAddressBar({ court, address, compact = false }) {
   const { toast } = useStore();
@@ -1452,10 +1505,10 @@ function RadarChart({ values, compare, height = 290 }) {
       data: {
         labels: RADAR_AXES,
         datasets: [
-          { label: '나의 플레이 스타일', data: values, backgroundColor: 'rgba(255,85,0,0.28)', borderColor: '#FF5500', borderWidth: 2.5,
-            pointBackgroundColor: '#00FF66', pointBorderColor: ct.bg, pointBorderWidth: 2, pointRadius: 4.5, pointHoverRadius: 6 },
-          ...(compare ? [{ label: '플랫폼 평균', data: compare, backgroundColor: ct.fg(0.03), borderColor: ct.fg(0.35),
-            borderDash: [4, 4], borderWidth: 1.2, pointRadius: 0 }] : []),
+          { label: '나의 플레이 스타일', data: values, backgroundColor: 'rgba(255,85,0,0.38)', borderColor: '#FF5500', borderWidth: 3,
+            pointBackgroundColor: '#00FF66', pointBorderColor: ct.bg, pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7 },
+          ...(compare ? [{ label: '플랫폼 평균', data: compare, backgroundColor: 'rgba(34,211,238,0.10)', borderColor: '#22D3EE',
+            borderDash: [4, 4], borderWidth: 1.8, pointRadius: 2.5, pointBackgroundColor: '#22D3EE' }] : []),
         ],
       },
       options: {
@@ -1464,8 +1517,8 @@ function RadarChart({ values, compare, height = 290 }) {
         scales: {
           r: {
             min: 0, max: 100, ticks: { display: false, stepSize: 25 },
-            grid: { color: ct.fg(0.08) }, angleLines: { color: ct.fg(0.1) },
-            pointLabels: { color: ct.fg(0.85), font: { size: 12, weight: '700', family: 'Pretendard Variable' } },
+            grid: { color: ct.fg(0.22), lineWidth: 1.3 }, angleLines: { color: ct.fg(0.28), lineWidth: 1.3 },
+            pointLabels: { color: ct.fg(0.95), font: { size: 12, weight: '800', family: 'Pretendard Variable' }, padding: 8 },
           },
         },
         plugins: {

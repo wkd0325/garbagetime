@@ -1389,6 +1389,59 @@ function ThemeToggle() {
   );
 }
 
+// 순수 스포츠 그래픽 헬퍼: 선수 고유 등번호(Jersey #), 저지 뱃지, 코트 바닥 라인 SVG 워터마크 (인물 사진 배제)
+const JERSEY_POOL = ['00', '01', '03', '07', '10', '11', '13', '15', '21', '23', '24', '30', '32', '33', '34', '45', '77', '99'];
+function getJerseyNum(user) {
+  if (!user) return '23';
+  if (user.jersey !== undefined && user.jersey !== null && String(user.jersey).trim()) return String(user.jersey);
+  const s = `${user.id || ''}:${user.nickname || ''}:${user.position || ''}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return JERSEY_POOL[h % JERSEY_POOL.length];
+}
+
+function JerseyBadge({ user, size = 'sm', className = '' }) {
+  if (!user) return null;
+  const p = POSITIONS[user.position] || POSITIONS.G;
+  const num = getJerseyNum(user);
+  const lg = size === 'lg';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-lg font-bebas leading-none tracking-wider ${lg ? 'px-2.5 py-1 text-base' : 'px-1.5 py-0.5 text-xs'} ${className}`}
+      style={{ color: p.color, background: `${p.color}1C`, border: `1px solid ${p.color}55` }}
+      title={`등번호 #${num} · ${p.name}`}
+    >
+      <svg viewBox="0 0 24 24" width={lg ? 13 : 10} height={lg ? 13 : 10} fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 3h3a3 3 0 0 0 6 0h3l3 5-3 2v11H6V10L3 8l3-5Z" />
+      </svg>
+      <span>#{num}</span>
+    </span>
+  );
+}
+
+function CourtLinesSvg({ color = '#FF5500', opacity = 0.1, className = '' }) {
+  return (
+    <svg
+      viewBox="0 0 400 200"
+      fill="none"
+      className={`pointer-events-none select-none ${className}`}
+      style={{ opacity }}
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <rect x="6" y="6" width="388" height="188" rx="14" stroke={color} strokeWidth="2" />
+      <line x1="200" y1="6" x2="200" y2="194" stroke={color} strokeWidth="1.8" strokeDasharray="6 4" />
+      <circle cx="200" cy="100" r="32" stroke={color} strokeWidth="2" />
+      <circle cx="200" cy="100" r="5" fill={color} />
+      <rect x="6" y="54" width="74" height="92" stroke={color} strokeWidth="1.8" />
+      <circle cx="80" cy="100" r="24" stroke={color} strokeWidth="1.6" strokeDasharray="5 4" />
+      <path d="M 6 22 L 52 22 A 84 84 0 0 1 52 178 L 6 178" stroke={color} strokeWidth="2" />
+      <rect x="320" y="54" width="74" height="92" stroke={color} strokeWidth="1.8" />
+      <circle cx="320" cy="100" r="24" stroke={color} strokeWidth="1.6" strokeDasharray="5 4" />
+      <path d="M 394 22 L 348 22 A 84 84 0 0 0 348 178 L 394 178" stroke={color} strokeWidth="2" />
+    </svg>
+  );
+}
+
 // 체육관 상세 도로명 주소 + [주소 복사] / [네이버 지도] / [카카오맵] 액션 바
 function CourtAddressBar({ court, address, compact = false }) {
   const { toast } = useStore();
@@ -1444,10 +1497,10 @@ function RadarChart({ values, compare, height = 290 }) {
       data: {
         labels: RADAR_AXES,
         datasets: [
-          { label: '나의 플레이 스타일', data: values, backgroundColor: 'rgba(255,85,0,0.28)', borderColor: '#FF5500', borderWidth: 2.5,
-            pointBackgroundColor: '#00FF66', pointBorderColor: ct.bg, pointBorderWidth: 2, pointRadius: 4.5, pointHoverRadius: 6 },
-          ...(compare ? [{ label: '플랫폼 평균', data: compare, backgroundColor: ct.fg(0.03), borderColor: ct.fg(0.35),
-            borderDash: [4, 4], borderWidth: 1.2, pointRadius: 0 }] : []),
+          { label: '나의 플레이 스타일', data: values, backgroundColor: 'rgba(255,85,0,0.38)', borderColor: '#FF5500', borderWidth: 3,
+            pointBackgroundColor: '#00FF66', pointBorderColor: ct.bg, pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7 },
+          ...(compare ? [{ label: '플랫폼 평균', data: compare, backgroundColor: 'rgba(34,211,238,0.10)', borderColor: '#22D3EE',
+            borderDash: [4, 4], borderWidth: 1.8, pointRadius: 2.5, pointBackgroundColor: '#22D3EE' }] : []),
         ],
       },
       options: {
@@ -1456,8 +1509,8 @@ function RadarChart({ values, compare, height = 290 }) {
         scales: {
           r: {
             min: 0, max: 100, ticks: { display: false, stepSize: 25 },
-            grid: { color: ct.fg(0.08) }, angleLines: { color: ct.fg(0.1) },
-            pointLabels: { color: ct.fg(0.85), font: { size: 12, weight: '700', family: 'Pretendard Variable' } },
+            grid: { color: ct.fg(0.22), lineWidth: 1.3 }, angleLines: { color: ct.fg(0.28), lineWidth: 1.3 },
+            pointLabels: { color: ct.fg(0.95), font: { size: 12, weight: '800', family: 'Pretendard Variable' }, padding: 8 },
           },
         },
         plugins: {
@@ -2529,10 +2582,10 @@ function MatchCard({ m, compact = false }) {
   const dow = d.getDay();
   const dateBadgeStr = `${pad2(d.getMonth() + 1)}.${pad2(d.getDate())} (${DOW[dow]})`;
   const dowBadgeCls = dow === 0
-    ? 'border-red-500/35 bg-red-500/15 text-red-400'
+    ? 'border-red-500/40 bg-red-500/15 text-red-400'
     : dow === 6
-      ? 'border-sky-500/35 bg-sky-500/15 text-sky-400'
-      : 'border-brand/35 bg-brand/15 text-brand';
+      ? 'border-sky-500/40 bg-sky-500/15 text-sky-400'
+      : 'border-brand/40 bg-brand/15 text-brand';
   const startTimeStr = fmtTime(m.datetime);
   const endTimeStr = fmtTime(m.datetime + 120 * 60000);
   const fmtInfo = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
@@ -2550,47 +2603,56 @@ function MatchCard({ m, compact = false }) {
   else action = <Btn className="w-full" onClick={apply}><Icon name="UserPlus" size={16} /> 참가 신청 · {fmtWon(m.fee)}</Btn>;
 
   return (
-    <Card className={`relative overflow-hidden p-4 transition ${joined ? '!border-neon/40 shadow-[0_0_30px_-12px_rgba(0,255,102,.5)]' : isMgr ? '!border-brand/45 shadow-[0_0_24px_-12px_rgba(255,85,0,.45)]' : ''}`}>
+    <Card className={`relative overflow-hidden p-4 transition ${joined ? '!border-neon/45 shadow-[0_0_32px_-12px_rgba(0,255,102,.5)]' : isMgr ? '!border-brand/45 shadow-[0_0_26px_-12px_rgba(255,85,0,.45)]' : 'hover:border-white/15'}`}>
+      <CourtLinesSvg color={joined ? '#00FF66' : '#FF5500'} opacity={0.04} className="absolute inset-0 h-full w-full" />
       {joined && m.status !== 'finished' && m.status !== 'cancelled' && (
         <div className="absolute right-0 top-0 z-10 rounded-bl-xl bg-neon px-2.5 py-1 text-[10px] font-black text-black">✓ 참가 확정</div>
       )}
 
-      {/* 상단 핵심 영역: 좌측 대형 타임 박스 + 우측 3행 정보 영역 */}
-      <div className="flex items-stretch gap-3.5">
-        {/* 1. 좌측 타임/데이트 블록 (Time Box) 대형화 및 강조 */}
+      {/* 상단 핵심 영역: 좌측 대형 타임 박스 + 우측 하이 콘트라스트 정보 영역 */}
+      <div className="relative flex items-stretch gap-3.5">
+        {/* 1. 대형 타임 박스 (좌측): 묵직한 다크 패널 위에 날짜 뱃지 + 시작 시간 초대형 고대비 폰트 + 120분 경기/오픈런 뱃지 */}
         <button
           type="button"
           onClick={() => setDetailOpen(true)}
-          className="flex w-[98px] shrink-0 flex-col items-center justify-between rounded-2xl border border-white/10 bg-ink px-2 py-2.5 text-center shadow-inner transition hover:border-brand/50 active:scale-[.98]"
+          className="flex w-[104px] shrink-0 flex-col items-center justify-between rounded-2xl border border-white/10 bg-ink px-2 py-2.5 text-center shadow-inner transition hover:border-brand/50 active:scale-[.98]"
         >
           <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold leading-none ${dowBadgeCls}`}>
             {dateBadgeStr}
           </span>
-          <div className="my-1 font-bebas text-3xl font-black leading-none tracking-wider text-white">
+          <div className="my-1 font-bebas text-[34px] font-black leading-none tracking-wider text-white">
             {startTimeStr}
           </div>
-          <div className="space-y-0.5 leading-tight">
-            <div className="text-[10px] font-extrabold text-white/60">~{endTimeStr}</div>
-            <div className="text-[10px] font-bold text-white/50">120분 경기</div>
+          <div className="w-full space-y-1 leading-tight">
+            <div className="text-[10px] font-bold text-white/55">~{endTimeStr}</div>
+            {unlimited ? (
+              <span className="inline-block rounded-md border border-neon/45 bg-neon/15 px-1.5 py-0.5 text-[9px] font-extrabold text-neon">
+                ∞ 오픈런
+              </span>
+            ) : (
+              <span className="inline-block rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-extrabold text-white/75">
+                120분 경기
+              </span>
+            )}
           </div>
         </button>
 
-        {/* 2. 우측 정보 영역 (1행 태그 라인 · 2행 체육관 & 타이틀) */}
+        {/* 2. 우측 정보 & 상태 영역 */}
         <div className="min-w-0 flex-1">
           {/* 1행 (태그 라인): 매치 상태 뱃지 · 포맷 뱃지 · 권장 티어 */}
           <div className="mb-1.5 flex flex-wrap items-center gap-1 pr-14">
             <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold ${st.cls}`}>{st.label}</span>
             {m.status === 'open' && !unlimited && left > 0 && (
               <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold ${left <= 3 ? 'border-brand/50 bg-brand/15 text-brand' : 'border-neon/40 bg-neon/10 text-neon'}`}>
-                {left}자리 남음!
+                {left <= 3 ? `🔥 ${left}자리 남음!` : `${left}자리 남음!`}
               </span>
             )}
             {isMgr && <span className="rounded-md border border-brand/50 bg-brand/20 px-1.5 py-0.5 text-[10px] font-black text-brand">✨ NEW 신규 개설</span>}
             <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold text-white/80">{m.format}</span>
-            <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/65">{m.recTier}</span>
+            <span className="rounded-md border border-[#22D3EE]/35 bg-[#22D3EE]/10 px-2 py-0.5 text-[10px] font-extrabold text-[#22D3EE]">{m.recTier}</span>
           </div>
 
-          {/* 2행 (타이틀 & 체육관): 체육관 명칭 굵고 선명하게 + 매치 타이틀 + 도로명 주소 */}
+          {/* 2행: 체육관 이름(굵게) + 매치 타이틀 + 도로명 상세 주소 */}
           <button
             type="button"
             onClick={() => setDetailOpen(true)}
@@ -2602,27 +2664,27 @@ function MatchCard({ m, compact = false }) {
           <button
             type="button"
             onClick={() => setDetailOpen(true)}
-            className="mt-0.5 block w-full truncate text-left text-xs font-bold text-white/75 hover:text-brand"
+            className="mt-0.5 block w-full truncate text-left text-xs font-bold text-white/80 hover:text-brand"
           >
             {m.title}
           </button>
-          <div className="mt-0.5 truncate text-[11px] text-white/50">{addr}</div>
+          <div className="mt-0.5 truncate text-[11px] font-medium text-white/55">{addr}</div>
         </div>
       </div>
 
-      {/* 도로명 주소 복사 & 네이버 지도 / 카카오맵 길찾기 바로가기 버튼 */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => copyAddress(addr, toast)}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/75 transition hover:border-brand hover:text-brand active:scale-95">
-          <Icon name="Copy" size={11} /> 주소 복사
-        </button>
+      {/* [네이버 지도], [카카오맵], [주소 복사] 깔끔한 플랫 미니 버튼 */}
+      <div className="relative mt-2.5 flex flex-wrap items-center gap-1.5">
         <button type="button" onClick={() => openNaverMap(addr || m.court)}
-          className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/40 bg-[#03C75A]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#03C75A] transition hover:bg-[#03C75A]/25 active:scale-95">
+          className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/45 bg-[#03C75A]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#03C75A] transition hover:bg-[#03C75A]/25 active:scale-95">
           <Icon name="Navigation" size={11} /> 네이버 지도
         </button>
         <button type="button" onClick={() => openKakaoMap(addr || m.court)}
           className="inline-flex items-center gap-1 rounded-lg border border-[#FEE500]/50 bg-[#FEE500]/20 px-2.5 py-1 text-[11px] font-extrabold text-yellow-300 transition hover:bg-[#FEE500]/30 active:scale-95">
           <Icon name="Map" size={11} /> 카카오맵
+        </button>
+        <button type="button" onClick={() => copyAddress(addr, toast)}
+          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/75 transition hover:border-brand hover:text-brand active:scale-95">
+          <Icon name="Copy" size={11} /> 주소 복사
         </button>
         <button type="button" onClick={() => setDetailOpen(true)}
           className="ml-auto inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/60 transition hover:text-white active:scale-95">
@@ -2632,13 +2694,13 @@ function MatchCard({ m, compact = false }) {
       <MatchDetailModal match={m} open={detailOpen} onClose={() => setDetailOpen(false)} />
 
       {!compact && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="relative mt-3 grid grid-cols-3 gap-2">
           {[
             ['Users', '매치 포맷', `${m.format}`, unlimited ? '오픈런 · 인원 무제한' : `교체 포함 최대 ${m.maxPlayers}명`],
             ['Award', '권장 티어', m.recTier, `${fmtInfo.onCourt}인 출전`],
             ['BadgeCheck', '담당 매니저', m.manager.replace(' 매니저', ''), '공식 기록원'],
           ].map(([ic, k, v, s]) => (
-            <div key={k} className="rounded-xl bg-ink/70 px-2.5 py-2">
+            <div key={k} className="rounded-xl border border-white/[.04] bg-ink/70 px-2.5 py-2">
               <div className="flex items-center gap-1 text-[10px] font-bold text-white/35"><Icon name={ic} size={10} />{k}</div>
               <div className="mt-0.5 truncate text-[12px] font-bold">{v}</div>
               <div className="truncate text-[10px] text-white/35">{s}</div>
@@ -2647,12 +2709,12 @@ function MatchCard({ m, compact = false }) {
         </div>
       )}
 
-      {/* 3행 (모집 현황 & 남은 자리 강조) */}
-      <div className="mt-3">
+      {/* 3행 (모집 현황 프로그레스 바 / 무제한 오픈런 네온 뱃지) */}
+      <div className="relative mt-3">
         {unlimited ? (
-          <div className="flex items-center justify-between rounded-xl border border-neon/40 bg-neon/10 px-3 py-2">
+          <div className="flex items-center justify-between rounded-xl border border-neon/45 bg-neon/10 px-3 py-2.5 shadow-[0_0_20px_-10px_rgba(0,255,102,0.4)]">
             <span className="flex items-center gap-1.5 text-xs font-extrabold text-neon">
-              <Icon name="Sparkles" size={14} /> 참가 {m.participants.length}명 · 인원 제한 없음 (오픈런 · 인원 무제한)
+              <Icon name="Sparkles" size={14} /> 참가 {m.participants.length}명 · 인원 제한 없음 (오픈런)
             </span>
             <div className="flex -space-x-2">
               {m.participants.slice(0, 6).map((id) => <div key={id} className="rounded-full ring-2 ring-panel"><Avatar user={state.users[id]} size={22} /></div>)}
@@ -2660,15 +2722,15 @@ function MatchCard({ m, compact = false }) {
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-white/[.06] bg-ink/60 px-3 py-2.5">
+          <div className="rounded-xl border border-white/[.06] bg-ink/70 px-3 py-2.5">
             <div className="mb-1.5 flex items-center justify-between text-xs">
               <span className="font-extrabold">
-                <span className="text-white/60">현재 참가 </span>
+                <span className="text-white/65">참가 </span>
                 <span className={left <= 3 && m.status === 'open' ? 'text-brand' : 'text-white'}>{m.participants.length}</span>
                 <span className="text-white/45"> / {m.maxPlayers}명</span>
                 {m.status === 'open' && left > 0 && (
                   <span className={`ml-1.5 font-extrabold ${left <= 3 ? 'text-brand' : 'text-neon'}`}>
-                    ({left}자리 남음!)
+                    ({left <= 3 ? `🔥 ${left}자리 남음!` : `${left}자리 남음!`})
                   </span>
                 )}
                 {m.status === 'open' && left <= 0 && (
@@ -2680,19 +2742,22 @@ function MatchCard({ m, compact = false }) {
                 {m.participants.length > 6 && <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-panel2 text-[9px] font-bold ring-2 ring-panel">+{m.participants.length - 6}</div>}
               </div>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full transition-all duration-700 ${left <= 2 ? 'bg-brand shadow-[0_0_10px_#FF5500]' : 'bg-neon'}`} style={{ width: `${pct}%` }} />
+            <div className="h-2.5 overflow-hidden rounded-full bg-white/10 p-[1px]">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${left <= 3 ? 'bg-gradient-to-r from-brand to-amber-400 shadow-[0_0_10px_#FF5500]' : 'bg-gradient-to-r from-neon to-[#22D3EE] shadow-[0_0_10px_#00FF66]'}`}
+                style={{ width: `${pct}%` }}
+              />
             </div>
           </div>
         )}
       </div>
-      <div className="mt-3">{action}</div>
+      <div className="relative mt-3">{action}</div>
     </Card>
   );
 }
 
 function LobbyPage() {
-  const { state } = useStore();
+  const { state, setTab } = useStore();
   const me = state.users[state.meId];
   const [filter, setFilter] = useState('all');
   const filters = [['all', '전체'], ['open', '모집중'], ['hot', '마감 임박'], ['region', '내 지역']];
@@ -2715,24 +2780,95 @@ function LobbyPage() {
     });
   const totalActiveCount = state.matches.filter((m) => m.status !== 'finished' && m.status !== 'cancelled').length;
   const t = getTier(me.rating);
+  const nt = getNextTier(me.rating);
+  const tierProgress = nt ? Math.max(5, Math.min(100, ((me.rating - t.min) / (nt.min - t.min)) * 100)) : 100;
+  const latestGame = me.games && me.games[0];
+  const posObj = POSITIONS[me.position] || POSITIONS.G;
 
   return (
     <div className="space-y-4">
-      <Card className="relative overflow-hidden p-4">
-        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full blur-3xl" style={{ background: `${t.color}33` }} />
-        <div className="relative flex items-center gap-3">
-          <TierEmblem rating={me.rating} size={54} />
+      {/* A. 매칭 로비 상단: 마이 라이브 티어 위젯 */}
+      <button
+        type="button"
+        onClick={() => { setTab('my'); vibrate(8); }}
+        className="group relative block w-full overflow-hidden rounded-2xl border-2 bg-panel p-4 text-left transition hover:brightness-105 active:scale-[.99]"
+        style={{
+          borderColor: `${t.color}66`,
+          boxShadow: `0 16px 40px -18px ${t.color}55`,
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0" style={{ background: `linear-gradient(125deg, ${t.color}28, rgba(34,211,238,0.06) 55%, transparent 85%)` }} />
+        <CourtLinesSvg color={t.color} opacity={0.1} className="absolute inset-0 h-full w-full" />
+        <div className="relative flex items-center gap-3.5">
+          {/* 좌측: 빛나는 육각형 티어 엠블럼 + 내 포지션 뱃지 (PG, C 등) */}
+          <div className="flex shrink-0 flex-col items-center gap-1.5">
+            <TierEmblem rating={me.rating} size={64} glow />
+            <span
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-bebas text-xs tracking-wider"
+              style={{ color: posObj.color, background: `${posObj.color}22`, border: `1px solid ${posObj.color}66` }}
+            >
+              {posObj.id} · #{getJerseyNum(me)}
+            </span>
+          </div>
+
+          {/* 중앙: 닉네임 + 현재 레이팅 1000 PT (대형 폰트) + 다음 티어 승급 프로그레스 게이지 바 */}
           <div className="min-w-0 flex-1">
-            <div className="text-xs text-white/45">오늘도 코트로, <b className="text-white">{me.nickname}</b>님 👋</div>
-            <div className="mt-0.5 flex items-center gap-2">
-              <span className="font-bebas text-3xl leading-none">{me.rating}<span className="ml-1 text-base text-white/40">PT</span></span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-extrabold tracking-widest text-brand">MY LIVE TIER</span>
               <TierChip rating={me.rating} />
-              {me.lastDelta !== 0 && <DeltaChip delta={me.lastDelta} />}
+              <PosChip pos={me.position} />
             </div>
-            <div className="mt-0.5 text-[11px] text-white/40"><Icon name="MapPin" size={10} className="inline" /> {me.city} {me.district} · {POSITIONS[me.position].name}</div>
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+              <div className="truncate text-base font-extrabold text-white">{me.nickname}</div>
+              <div className="font-bebas text-4xl leading-none tracking-wide text-white">
+                {me.rating} <span className="text-base text-brand">PT</span>
+              </div>
+            </div>
+
+            {/* 다음 티어 승급 프로그레스 게이지 바 */}
+            <div className="mt-2">
+              <div className="mb-1 flex items-center justify-between text-[10px] font-extrabold">
+                <span style={{ color: t.color }}>{t.name} 티어</span>
+                <span className="text-white/65">
+                  {nt ? `${nt.name} 승급까지 ${nt.min - me.rating} PT` : '최고 티어 LEGEND'}
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-ink/90 p-[1px]">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${tierProgress}%`,
+                    background: `linear-gradient(90deg, ${t.color}, #FF5500, #00FF66)`,
+                    boxShadow: `0 0 10px ${t.color}`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 우측/하단: 최근 경기 결과 칩 + 마이페이지 이동 안내 */}
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+              {latestGame ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-extrabold ${
+                    latestGame.delta >= 0
+                      ? 'border-neon/45 bg-neon/15 text-neon'
+                      : 'border-red-500/40 bg-red-500/15 text-red-400'
+                  }`}
+                >
+                  최근 경기 {latestGame.delta >= 0 ? '▲' : '▼'} {signed(latestGame.delta)} PT {latestGame.result === 'W' ? '승리' : latestGame.result === 'L' ? '패배' : '무승부'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-lg border border-[#22D3EE]/35 bg-[#22D3EE]/10 px-2 py-0.5 text-[11px] font-extrabold text-[#22D3EE]">
+                  ⚡ 첫 공식 경기 준비중 · {me.city} {me.district}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-extrabold text-white/55 group-hover:text-brand">
+                선수 카드 보기 <Icon name="ChevronRight" size={13} />
+              </span>
+            </div>
           </div>
         </div>
-      </Card>
+      </button>
 
       <DemoGuide />
 
@@ -2877,14 +3013,14 @@ function RankingPage() {
 }
 
 /* =====================================================================
- * 12. USER: MY PAGE (Dashboard & Data Visualization)
+ * 12. USER: MY PAGE (디지털 스포츠 선수 카드 & 데이터 대시보드)
  * ===================================================================== */
 function MyPage() {
-  const { state, dispatch, toast } = useStore();
+  const { state, dispatch } = useStore();
   const me = state.users[state.meId];
   const t = getTier(me.rating);
   const nt = getNextTier(me.rating);
-  const progress = nt ? ((me.rating - t.min) / (nt.min - t.min)) * 100 : 100;
+  const progress = nt ? Math.max(4, Math.min(100, ((me.rating - t.min) / (nt.min - t.min)) * 100)) : 100;
   const radar = radarScores(me.totals);
   const latest = me.games[0];
   const reveal = state.reveal && latest && state.reveal.matchId === latest.matchId;
@@ -2893,6 +3029,10 @@ function MyPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const manAge = calcAge(me.birthDate, me.age);
+  const posObj = POSITIONS[me.position] || POSITIONS.G;
+  const jerseyNum = getJerseyNum(me);
+  const winRate = me.totals.gp ? Math.round((me.totals.wins / me.totals.gp) * 100) : 0;
+  const avgAbei = me.totals.gp ? (me.totals.abei / g).toFixed(1) : '0.0';
 
   const platformAvg = useMemo(() => {
     const ps = Object.values(state.users).filter((u) => u.totals.gp > 0).map((u) => radarScores(u.totals));
@@ -2906,8 +3046,8 @@ function MyPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[10px] font-extrabold tracking-[.25em] text-white/35">MY PAGE</div>
-          <h1 className="text-lg font-extrabold leading-tight">마이페이지</h1>
+          <div className="text-[10px] font-extrabold tracking-[.25em] text-brand">PLAYER DATA CARD</div>
+          <h1 className="text-lg font-extrabold leading-tight">마이 선수 카드</h1>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => { setEditOpen(true); vibrate(8); }}
@@ -2922,6 +3062,7 @@ function MyPage() {
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ProfileEditModal open={editOpen} onClose={() => setEditOpen(false)} />
+
       {reveal && (
         <div className="pop-in relative overflow-hidden rounded-2xl border border-neon/40 bg-gradient-to-br from-neon/15 via-panel to-panel p-4 shadow-[0_0_40px_-12px_rgba(0,255,102,.6)]">
           <div className="shine pointer-events-none absolute inset-0" />
@@ -2939,92 +3080,185 @@ function MyPage() {
         </div>
       )}
 
-      {/* Profile card */}
-      <Card className="relative overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-28" style={{ background: `linear-gradient(135deg, ${t.color}40, transparent 70%)` }} />
-        <div className="absolute -right-4 top-2 font-bebas text-[110px] leading-none opacity-[.06]">{POSITIONS[me.position].id}</div>
+      {/* 1. 상단 프로필 카드: 티어 고유 컬러 글로우 테두리 + 코트 라인 워터마크 + 등번호 저지 그래픽 */}
+      <Card
+        className="relative overflow-hidden border-2"
+        style={{
+          borderColor: `${t.color}77`,
+          boxShadow: `0 18px 46px -16px ${t.color}45, inset 0 1px 0 0 ${t.color}33`,
+        }}
+      >
+        <div className="absolute inset-x-0 top-0 h-36" style={{ background: `linear-gradient(135deg, ${t.color}38, rgba(34,211,238,0.08) 55%, transparent 80%)` }} />
+        <CourtLinesSvg color={t.color} opacity={0.11} className="absolute inset-0 h-full w-full" />
+        {/* 대형 저지 배번 & 포지션 코드 배경 워터마크 */}
+        <div className="pointer-events-none select-none absolute -right-2 -top-2 font-bebas text-[104px] leading-none tracking-tighter opacity-[.09]" style={{ color: posObj.color }}>
+          #{jerseyNum}
+        </div>
+
         <div className="relative p-5">
+          {/* 상단 헤더 바: 공식 라이선스 & 저지 배번 */}
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black tracking-widest" style={{ color: t.color, background: `${t.color}20`, border: `1px solid ${t.color}55` }}>
+                <Icon name="ShieldCheck" size={11} /> {t.en} TIER CARD
+              </span>
+              <span className="text-[10px] font-bold text-white/45">신뢰도 σ {me.sigma.toFixed(2)}</span>
+            </div>
+            <JerseyBadge user={me} size="lg" />
+          </div>
+
+          {/* 좌측 육각형 티어 엠블럼 + 우측 선수 상세 스펙 */}
           <div className="flex items-start gap-4">
-            <div className={reveal && tierUp ? 'pop-in' : ''}><TierEmblem rating={me.rating} size={88} glow /></div>
-            <div className="min-w-0 flex-1 pt-1">
-              <div className="flex items-center gap-2"><h2 className="truncate text-xl font-extrabold">{me.nickname}</h2><PosChip pos={me.position} /></div>
-              <div className="mt-0.5 text-xs font-semibold text-white/65">{me.realName ? `${me.realName} · ` : ''}{me.gender === 'F' ? '여성' : '남성'} · 만 {manAge}세{me.birthDate ? ` (${me.birthDate})` : ''}</div>
-              <div className="mt-0.5 text-xs text-white/45">{me.height}cm · {me.weight}kg · {me.city} {me.district}</div>
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={reveal && tierUp ? 'pop-in' : ''}><TierEmblem rating={me.rating} size={88} glow /></div>
+              <span className="rounded-md px-2 py-0.5 font-bebas text-xs tracking-wider" style={{ color: posObj.color, background: `${posObj.color}20`, border: `1px solid ${posObj.color}55` }}>
+                {posObj.id} · {posObj.group}
+              </span>
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-xl font-extrabold">{me.nickname}</h2>
+                <PosChip pos={me.position} />
+              </div>
+              <div className="mt-1 text-xs font-semibold text-white/70">
+                {me.realName ? `${me.realName} · ` : ''}{me.gender === 'F' ? '여성' : '남성'} · 만 {manAge}세{me.birthDate ? ` (${me.birthDate})` : ''}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-bold">
+                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/80">{me.height}cm</span>
+                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/80">{me.weight}kg</span>
+                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/70">{me.city} {me.district}</span>
+              </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-sm font-extrabold" style={{ color: t.color }}>{t.name} 티어</span>
-                <span className="text-[10px] text-white/35">신뢰도 σ {me.sigma.toFixed(2)}</span>
+                <span className="text-xs font-extrabold" style={{ color: t.color }}>● {t.name} ({t.en})</span>
+                {me.badges.length > 0 && (
+                  <span className="rounded-md border border-neon/40 bg-neon/10 px-2 py-0.5 text-[10px] font-extrabold text-neon">
+                    활성 칭호 {me.badges.length}개
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          <div className="mt-4 flex items-end justify-between">
+
+          {/* 초대형 레이팅 보드 + 직전 경기 증감 */}
+          <div className="mt-4 flex items-end justify-between rounded-2xl border border-white/10 bg-ink/75 px-4 py-3">
             <div>
-              <div className="text-[10px] font-bold tracking-widest text-white/40">RATING</div>
-              <div className={`font-bebas text-6xl leading-none ${reveal ? 'text-glow-orange' : ''}`}>{me.rating}<span className="ml-1 text-xl text-white/40">PT</span></div>
+              <div className="text-[10px] font-extrabold tracking-[.22em] text-brand">OFFICIAL RATING</div>
+              <div className={`font-bebas text-6xl leading-none tracking-wide ${reveal ? 'text-glow-orange' : ''}`}>
+                {me.rating}<span className="ml-1.5 text-xl text-brand">PT</span>
+              </div>
             </div>
             <div className="pb-1 text-right">
-              <div className="mb-1 text-[10px] text-white/40">직전 경기 대비</div>
+              <div className="mb-1 text-[10px] font-bold text-white/45">최근 경기 변동</div>
               <DeltaChip delta={me.lastDelta} size="lg" />
             </div>
           </div>
-          <div className="mt-4">
-            <div className="mb-1 flex justify-between text-[10px] font-bold text-white/40">
-              <span style={{ color: t.color }}>{t.en}</span>
-              <span>{nt ? `${nt.name}까지 ${nt.min - me.rating} PT` : '최고 티어 달성'}</span>
+
+          {/* 다음 티어 승급 프로그레스 게이지 바 */}
+          <div className="mt-3.5">
+            <div className="mb-1.5 flex justify-between text-[11px] font-extrabold">
+              <span style={{ color: t.color }}>{t.name} ({t.min} PT)</span>
+              <span className="text-neon">{nt ? `다음 티어 [${nt.name}] 승급까지 ${nt.min - me.rating} PT 남음` : '★ 최고 티어 LEGEND 달성'}</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/5">
-              <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${t.color}, ${nt ? nt.color : t.color})`, boxShadow: `0 0 12px ${t.color}` }} />
+            <div className="h-2.5 overflow-hidden rounded-full bg-ink/90 p-[1px]">
+              <div
+                className="h-full rounded-full transition-all duration-1000"
+                style={{
+                  width: `${progress}%`,
+                  background: `linear-gradient(90deg, ${t.color}, #FF5500, #00FF66)`,
+                  boxShadow: `0 0 12px ${t.color}`,
+                }}
+              />
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {me.badges.length === 0 && <span className="rounded-full border border-dashed border-white/15 px-3 py-1 text-[11px] text-white/35">공식 경기를 치르면 플레이 스타일 칭호가 부여됩니다</span>}
-            {me.badges.map((b) => (
-              <span key={b} className={`rounded-full px-3 py-1 text-[11px] font-extrabold ${reveal ? 'pop-in' : ''}`} style={{ color: BADGES[b].color, background: `${BADGES[b].color}18`, border: `1px solid ${BADGES[b].color}55` }}>
-                {BADGES[b].label}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="grid grid-cols-4 divide-x divide-white/5 border-t border-white/5 text-center">
-          {[
-            ['경기', me.totals.gp],
-            ['승-패', `${me.totals.wins}-${me.totals.losses}`],
-            ['승률', me.totals.gp ? `${Math.round((me.totals.wins / me.totals.gp) * 100)}%` : '-'],
-            ['평균 ABEi', me.totals.gp ? (me.totals.abei / g).toFixed(1) : '-'],
-          ].map(([k, v]) => (
-            <div key={k} className="py-3"><div className="font-bebas text-2xl leading-none">{v}</div><div className="mt-1 text-[10px] text-white/40">{k}</div></div>
-          ))}
         </div>
       </Card>
 
-      {/* Radar */}
+      {/* 2. 4분할 주요 지표 그리드: [출전 경기], [승-패 (승률%)], [평균 ABEi 효율], [최근 변동 PT] */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Card className="relative overflow-hidden border border-white/10 p-3.5">
+          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+            <span>출전 경기</span>
+            <Icon name="Flame" size={13} className="text-brand" />
+          </div>
+          <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
+            {me.totals.gp} <span className="text-sm text-white/40">GAMES</span>
+          </div>
+          <div className="mt-1 text-[10px] font-bold text-white/40">공식 매니저 기록 기준</div>
+        </Card>
+
+        <Card className="relative overflow-hidden border border-white/10 p-3.5">
+          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+            <span>승-패 (승률%)</span>
+            <Icon name="Trophy" size={13} className="text-neon" />
+          </div>
+          <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
+            {me.totals.wins}승-{me.totals.losses}패 <span className="text-base text-neon">({winRate}%)</span>
+          </div>
+          <div className="mt-1 text-[10px] font-bold text-white/40">시즌 누적 승률</div>
+        </Card>
+
+        <Card className="relative overflow-hidden border border-white/10 p-3.5">
+          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+            <span>평균 ABEi 효율</span>
+            <Icon name="Gauge" size={13} className="text-[#22D3EE]" />
+          </div>
+          <div className="mt-1.5 font-bebas text-3xl leading-none text-[#22D3EE]">
+            {avgAbei} <span className="text-sm text-white/40">EFF</span>
+          </div>
+          <div className="mt-1 text-[10px] font-bold text-white/40">경기당 농구 효율 지수</div>
+        </Card>
+
+        <Card className="relative overflow-hidden border border-white/10 p-3.5">
+          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+            <span>최근 변동 PT</span>
+            <Icon name="TrendingUp" size={13} className={me.lastDelta >= 0 ? 'text-neon' : 'text-red-400'} />
+          </div>
+          <div className={`mt-1.5 font-bebas text-3xl leading-none ${me.lastDelta > 0 ? 'text-neon' : me.lastDelta < 0 ? 'text-red-400' : 'text-white/55'}`}>
+            {me.lastDelta ? `${me.lastDelta > 0 ? '▲ +' : '▼ '}${me.lastDelta} PT` : '— 0 PT'}
+          </div>
+          <div className="mt-1 text-[10px] font-bold text-white/40">{latest ? latest.title : '직전 공식 경기 대비'}</div>
+        </Card>
+      </div>
+
+      {/* 3. 6축 육각형 레이더 차트 (RadarChart) */}
       <Card className="p-4">
-        <SectionTitle icon="Hexagon" title="플레이 스타일 분석" sub="누적 스탯 기반 6축 정규화 (0~100)" />
-        <div className="relative">
+        <SectionTitle
+          icon="Hexagon"
+          title="6축 플레이 스타일 레이더"
+          sub="득점력 · 패스 · 리바운드 · 수비력 · 안정성 · 효율(ABEi) 정규화 분석"
+          right={<span className="rounded-md border border-brand/35 bg-brand/10 px-2 py-0.5 text-[10px] font-extrabold text-brand">6-AXIS RADAR</span>}
+        />
+        <div className="relative rounded-2xl border border-white/[.06] bg-ink/50 p-2">
           <RadarChart values={radar} compare={platformAvg} />
           {me.totals.gp === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="rounded-xl bg-ink/90 px-4 py-2 text-xs text-white/50">첫 공식 경기 후 분석이 시작됩니다</div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+              <div className="rounded-full border border-brand/40 bg-panel/95 px-3.5 py-1 text-[11px] font-bold text-brand shadow-lg">
+                첫 공식 경기 완료 시 실제 6축 스탯 폴리곤이 활성화됩니다
+              </div>
             </div>
           )}
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           {RADAR_AXES.map((ax, i) => (
-            <div key={ax} className="rounded-lg bg-ink/70 py-1.5 text-center">
-              <div className="font-bebas text-xl leading-none text-brand">{radar[i]}</div>
-              <div className="text-[9px] text-white/40">{ax}</div>
+            <div key={ax} className="rounded-xl border border-white/[.06] bg-ink/80 px-2 py-2 text-center">
+              <div className="font-bebas text-2xl leading-none text-brand">{radar[i]}</div>
+              <div className="mt-0.5 text-[10px] font-extrabold text-white/70">{ax}</div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-gradient-to-r from-brand to-neon" style={{ width: `${radar[i]}%` }} />
+              </div>
             </div>
           ))}
         </div>
       </Card>
 
-      {/* Momentum */}
+      {/* 레이팅 모멘텀 차트 */}
       <Card className="p-4">
         <SectionTitle icon="TrendingUp" title="레이팅 모멘텀" sub="최근 10경기 레이팅 변동 추이"
           right={<span className="rounded-md bg-white/5 px-2 py-1 text-[10px] font-bold text-white/50">{me.history.length - 1}경기</span>} />
         <MomentumChart history={me.history} />
       </Card>
 
-      {/* Latest report */}
+      {/* 최근 경기 알고리즘 리포트 */}
       {latest && (
         <Card className="p-4">
           <SectionTitle icon="FileChartColumn" title="최근 경기 알고리즘 리포트" sub={`${latest.title} · ${fmtShort(latest.date)}`} />
@@ -3045,20 +3279,56 @@ function MyPage() {
         </Card>
       )}
 
-      {/* Badge guide */}
+      {/* 4. 칭호(뱃지) 컬렉션 쇼케이스: 획득 칭호는 네온 그린(#00FF66) 활성화, 미획득은 Lock 아이콘 */}
       <Card className="p-4">
-        <SectionTitle icon="Medal" title="칭호 도감" sub="누적 스탯 분포 분석으로 자동 부여 · 갱신" />
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <SectionTitle
+          icon="Medal"
+          title="칭호(뱃지) 컬렉션 쇼케이스"
+          sub="공식 경기 누적 스탯 조건 달성 시 네온 그린(#00FF66)으로 즉시 해금됩니다"
+          right={
+            <span className="rounded-full border border-neon/40 bg-neon/10 px-2.5 py-0.5 text-[10px] font-extrabold text-neon">
+              해금 {me.badges.length} / {Object.keys(BADGES).length}
+            </span>
+          }
+        />
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {Object.entries(BADGES).map(([id, b]) => {
             const own = me.badges.includes(id);
+            const parts = b.label.split(' ');
+            const emoji = parts[0];
+            const title = parts.slice(1).join(' ');
             return (
-              <div key={id} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${own ? '' : 'border-white/5 opacity-45'}`} style={own ? { borderColor: `${b.color}55`, background: `${b.color}0F` } : {}}>
-                <span className="text-xl">{b.label.split(' ')[0]}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-extrabold" style={own ? { color: b.color } : {}}>{b.label.split(' ').slice(1).join(' ')}</div>
-                  <div className="text-[10px] text-white/40">{b.desc}</div>
+              <div
+                key={id}
+                className={`relative flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition ${
+                  own
+                    ? 'border-neon/60 bg-neon/10 shadow-[0_0_22px_-8px_rgba(0,255,102,0.45)]'
+                    : 'border-white/[.07] bg-ink/50 opacity-60'
+                }`}
+              >
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xl ${
+                    own ? 'border border-neon/50 bg-neon/20' : 'border border-white/10 bg-white/5'
+                  }`}
+                >
+                  {own ? emoji : <Icon name="Lock" size={16} className="text-white/40" />}
                 </div>
-                {own ? <Icon name="CircleCheck" size={16} style={{ color: b.color }} /> : <Icon name="Lock" size={14} className="text-white/30" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`truncate text-xs font-extrabold ${own ? 'text-neon' : 'text-white/70'}`}>{title}</span>
+                    {own ? (
+                      <span className="rounded bg-neon px-1.5 py-0.5 text-[9px] font-black text-black">UNLOCKED</span>
+                    ) : (
+                      <span className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[9px] font-bold text-white/40">LOCKED</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-white/50">{b.desc}</div>
+                </div>
+                {own ? (
+                  <Icon name="CircleCheck" size={18} className="shrink-0 text-neon" />
+                ) : (
+                  <Icon name="Lock" size={15} className="shrink-0 text-white/30" />
+                )}
               </div>
             );
           })}
