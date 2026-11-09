@@ -514,60 +514,96 @@ function computeBadges(t) {
 function runEngine(state, matchId) {
   const m = state.matches.find((x) => x.id === matchId);
   if (!m || !m.live) return state;
-  const { teams, stats } = m.live;
-  const teamScore = (t) => teams[t].reduce((s, id) => s + stats[id].pts, 0);
+  const nowTs = Date.now();
+  const users = { ...state.users };
+  const pProfiles = (m && m.participantProfiles) || {};
+  Object.keys(pProfiles).forEach((uid) => {
+    if (uid && pProfiles[uid] && !users[uid]) users[uid] = { ...pProfiles[uid] };
+  });
+
+  const teams = {
+    A: [...((m.live.teams && m.live.teams.A) || [])],
+    B: [...((m.live.teams && m.live.teams.B) || [])],
+  };
+  const stats = { ...(m.live.stats || {}) };
+
+  // 참가 신청자(m.participants) 중 팀에 누락된 실제 유저가 있으면 자동 편입하여 레이팅/기록에 반드시 포함
+  (m.participants || []).forEach((pid) => {
+    if (!pid) return;
+    if (!teams.A.includes(pid) && !teams.B.includes(pid)) {
+      const isBot = (users[pid] && users[pid].isBot) || String(pid).startsWith('bot_');
+      if (!isBot) {
+        const realA = teams.A.filter((x) => !(users[x]?.isBot || String(x).startsWith('bot_'))).length;
+        const realB = teams.B.filter((x) => !(users[x]?.isBot || String(x).startsWith('bot_'))).length;
+        const target = (realA < realB || (realA === realB && teams.A.length <= teams.B.length)) ? 'A' : 'B';
+        teams[target].push(pid);
+      }
+    }
+    if (!stats[pid]) stats[pid] = emptyStats();
+  });
+  [...teams.A, ...teams.B].forEach((pid) => {
+    if (!stats[pid]) stats[pid] = emptyStats();
+  });
+
+  const teamScore = (t) => teams[t].reduce((s, id) => s + ((stats[id] && stats[id].pts) || 0), 0);
   const scoreA = teamScore('A'), scoreB = teamScore('B');
   const winner = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : 'D';
-  const users = { ...state.users };
   const rows = [];
   const teamAvgs = {};
 
   ['A', 'B'].forEach((t) => {
     const ids = teams[t];
-    const abeis = ids.map((id) => calcABEi(stats[id]));
+    const abeis = ids.map((id) => calcABEi(stats[id] || emptyStats()));
     // 유동 인원 대응: 실제 출전 팀 인원수(team_players.length)로 나눔
     const teamAvg = ids.length ? abeis.reduce((a, b) => a + b, 0) / ids.length : 0;
     teamAvgs[t] = teamAvg;
     ids.forEach((id, i) => {
-      const u = users[id];
+      const u = users[id] || pProfiles[id];
       if (!u) return;
+      const st = stats[id] || emptyStats();
       const abei = abeis[i];
       const weight = calcWeight(abei, teamAvg);
       const result = winner === 'D' ? 'D' : winner === t ? 'W' : 'L';
       const delta = calcDelta(result, weight);
-      const before = u.rating;
+      const before = typeof u.rating === 'number' ? u.rating : 1000;
       const after = Math.max(0, before + delta);
-      const totals = { ...emptyTotals(), ...u.totals };
+      const totals = { ...emptyTotals(), ...(u.totals || {}) };
       totals.gp += 1;
       if (result === 'W') totals.wins += 1; else if (result === 'L') totals.losses += 1; else totals.draws += 1;
-      STAT_KEYS.forEach((k) => (totals[k] += stats[id][k]));
+      STAT_KEYS.forEach((k) => (totals[k] += (st[k] || 0)));
       totals.abei += abei;
       const game = {
         matchId, title: m.title, court: m.court, date: m.datetime, team: t, result,
-        stats: { ...stats[id] }, abei, teamAvg, weight, delta, before, after,
+        stats: { ...st }, abei, teamAvg, weight, delta, before, after,
         score: { A: scoreA, B: scoreB }, teamSize: ids.length,
       };
+      const prevGames = (u.games || []).filter((g) => g && g.matchId !== matchId);
       users[id] = {
         ...u,
         rating: after,
         lastDelta: delta,
-        sigma: Math.max(1.5, +(u.sigma * 0.92).toFixed(2)),
+        sigma: Math.max(1.5, +((u.sigma || 8.33) * 0.92).toFixed(2)),
         totals,
         badges: computeBadges(totals),
-        history: [...u.history, { label: fmtShort(m.datetime), rating: after, delta, matchId }],
-        games: [game, ...(u.games || [])].slice(0, 40), updatedAt: Date.now(),
+        history: [...(u.history || [{ label: '가입', rating: 1000, delta: 0 }]), { label: fmtShort(m.datetime), rating: after, delta, matchId }],
+        games: [game, ...prevGames].slice(0, 40),
+        rev: (u.rev || 0) + 1,
+        updatedAt: nowTs,
       };
       rows.push({ id, nickname: u.nickname, position: u.position, ...game, tierBefore: getTier(before).id, tierAfter: getTier(after).id });
     });
   });
 
-  const result = { scoreA, scoreB, winner, rows, teamAvgs, submittedAt: Date.now() };
-  const inMatch = teams.A.includes(state.meId) || teams.B.includes(state.meId);
+  const result = { scoreA, scoreB, winner, rows, teamAvgs, submittedAt: nowTs };
   return {
     ...state,
     users,
-    matches: state.matches.map((x) => (x.id === matchId ? { ...x, status: 'finished', result, updatedAt: Date.now() } : x)),
-    reveal: { matchId, at: Date.now() },
+    matches: state.matches.map((x) => (
+      x.id === matchId
+        ? { ...x, status: 'finished', live: { ...x.live, teams, stats }, result, rev: (x.rev || 0) + 1, updatedAt: nowTs, lastOp: { type: 'SUBMIT', at: nowTs } }
+        : x
+    )),
+    reveal: { matchId, at: nowTs },
   };
 }
 
@@ -648,6 +684,21 @@ function loadState() {
 
 
 // 탭/브라우저/서버 간 상태 병합 유틸 (매니저 개설 매치 및 멀티유저 참가자 유실 원천 방지)
+function _statusRank(m) {
+  if (!m) return 0;
+  const st = m.status || 'open';
+  if (st === 'finished') return 4;
+  if (st === 'cancelled') return 3;
+  if (st === 'live') return 2;
+  return 1; // open, closed
+}
+function _isBotId(uid, usersMap) {
+  if (!uid) return true;
+  if (String(uid).startsWith('bot_')) return true;
+  const u = usersMap && usersMap[uid];
+  return Boolean(u && u.isBot);
+}
+
 function normalizeAndMergeState(base, incoming) {
   const b = (base && base.version === 2 && base.users && base.matches) ? base : null;
   const inc = (incoming && incoming.version === 2 && incoming.users && incoming.matches) ? incoming : null;
@@ -673,12 +724,54 @@ function normalizeAndMergeState(base, incoming) {
   });
   const customCourts = Array.from(courtMap.values());
 
-  // 3) 매치 병합 (primary + secondary + gt_manager_matches_v2 전용 스토리지 + 멀티유저 참가자 CRDT 합집합 병합)
+  // 3) 유저 1차 병합 (모든 기기의 가입 유저·포지션 수정·경기 기록 보존)
+  const rawUsers = { ...((secondary && secondary.users) || {}), ...((primary && primary.users) || {}) };
+  if (secondary && secondary.users && primary && primary.users) {
+    Object.keys(secondary.users).forEach((uid) => {
+      if (primary.users[uid]) {
+        const u1 = secondary.users[uid];
+        const u2 = primary.users[uid];
+        const gp1 = (u1.totals && u1.totals.gp) || 0;
+        const gp2 = (u2.totals && u2.totals.gp) || 0;
+        const gLen1 = (u1.games && u1.games.length) || 0;
+        const gLen2 = (u2.games && u2.games.length) || 0;
+        const rev1 = u1.rev || 0;
+        const rev2 = u2.rev || 0;
+        const t1 = u1.updatedAt || u1.joinedAt || 0;
+        const t2 = u2.updatedAt || u2.joinedAt || 0;
+        const statsFromU1 = (gp1 > gp2) || (gp1 === gp2 && gLen1 > gLen2) || (gp1 === gp2 && gLen1 === gLen2 && rev1 > rev2) || (gp1 === gp2 && gLen1 === gLen2 && rev1 === rev2 && t1 >= t2);
+        const profFromU1 = (rev1 > rev2) || (rev1 === rev2 && t1 >= t2);
+        const statW = statsFromU1 ? u1 : u2;
+        const profW = profFromU1 ? u1 : u2;
+        rawUsers[uid] = {
+          ...u1,
+          ...u2,
+          ...profW,
+          rating: statW.rating !== undefined ? statW.rating : 1000,
+          lastDelta: statW.lastDelta !== undefined ? statW.lastDelta : 0,
+          sigma: statW.sigma !== undefined ? statW.sigma : 8.33,
+          totals: statW.totals || emptyTotals(),
+          badges: statW.badges || [],
+          history: statW.history || [{ label: '가입', rating: 1000, delta: 0 }],
+          games: statW.games || [],
+          rev: Math.max(rev1, rev2),
+          updatedAt: Math.max(t1, t2),
+        };
+      }
+    });
+  }
+
+  // 4) 매치 병합 (primary + secondary + gt_manager_matches_v2 전용 스토리지 + 멀티유저 참가자 CRDT 합집합 병합)
   const mergeMatchObj = (prev, next) => {
+    const rankPrev = _statusRank(prev);
+    const rankNext = _statusRank(next);
+    const revPrev = prev.rev || 0;
+    const revNext = next.rev || 0;
     const tPrev = prev.updatedAt || prev.createdAt || 0;
     const tNext = next.updatedAt || next.createdAt || 0;
-    const newer = tNext >= tPrev ? next : prev;
-    const older = tNext >= tPrev ? prev : next;
+    const nextIsNewer = (rankNext > rankPrev) || (rankNext === rankPrev && revNext > revPrev) || (rankNext === rankPrev && revNext === revPrev && tNext >= tPrev);
+    const newer = nextIsNewer ? next : prev;
+    const older = nextIsNewer ? prev : next;
 
     const appliedAt = { ...((older && older.appliedAt) || {}), ...((newer && newer.appliedAt) || {}) };
     if (older && older.appliedAt && newer && newer.appliedAt) {
@@ -692,6 +785,33 @@ function normalizeAndMergeState(base, incoming) {
         cancelledAt[k] = Math.max(older.cancelledAt[k] || 0, newer.cancelledAt[k] || 0);
       });
     }
+
+    const participantProfiles = {
+      ...((older && older.participantProfiles) || {}),
+      ...((newer && newer.participantProfiles) || {}),
+    };
+    Object.entries(participantProfiles).forEach(([uid, prof]) => {
+      if (uid && prof && typeof prof === 'object' && !rawUsers[uid]) {
+        rawUsers[uid] = {
+          id: uid,
+          nickname: prof.nickname || '선수',
+          position: prof.position || 'G',
+          height: prof.height || 178,
+          age: prof.age || 27,
+          gender: prof.gender || 'M',
+          isBot: Boolean(prof.isBot),
+          rating: prof.rating || 1000,
+          sigma: 8.33,
+          totals: emptyTotals(),
+          history: [{ label: '가입', rating: prof.rating || 1000, delta: 0 }],
+          lastDelta: 0,
+          badges: [],
+          games: [],
+          joinedAt: prof.updatedAt || Date.now(),
+          updatedAt: prof.updatedAt || Date.now(),
+        };
+      }
+    });
 
     const cancelledSet = new Set([...(older.cancelledIds || []), ...(newer.cancelledIds || [])]);
     const removedSet = new Set([...(older.removedIds || []), ...(newer.removedIds || [])]);
@@ -714,7 +834,7 @@ function normalizeAndMergeState(base, incoming) {
     });
 
     Object.keys(appliedAt).forEach((uid) => {
-      if ((appliedAt[uid] || 0) > (cancelledAt[uid] || 0)) {
+      if ((appliedAt[uid] || 0) >= (cancelledAt[uid] || 0)) {
         cancelledSet.delete(uid);
         removedSet.delete(uid);
       }
@@ -725,28 +845,113 @@ function normalizeAndMergeState(base, incoming) {
       }
     });
 
-    const pList = [];
     const candidates = [
       ...(older.participants || []),
       ...(newer.participants || []),
-      ...Object.keys(appliedAt).filter((uid) => (appliedAt[uid] || 0) > (cancelledAt[uid] || 0)),
+      ...Object.keys(appliedAt).filter((uid) => (appliedAt[uid] || 0) >= (cancelledAt[uid] || 0)),
     ];
+    const realPids = [];
+    const botPids = [];
     candidates.forEach((pid) => {
-      if (!pid || pList.includes(pid)) return;
+      if (!pid || realPids.includes(pid) || botPids.includes(pid)) return;
       if (!cancelledSet.has(pid) && !removedSet.has(pid)) {
-        pList.push(pid);
+        if (_isBotId(pid, rawUsers)) botPids.push(pid);
+        else realPids.push(pid);
       }
     });
+    // 실제 가입 유저(친구)들을 항상 게스트 봇보다 최우선 배치하고 정원 초과 시 봇을 자동 축출
+    let pList = [...realPids, ...botPids];
+    const maxP = Number(newer.maxPlayers ?? older.maxPlayers ?? 12);
+    const unlim = isUnlimitedMatch(newer) || isUnlimitedMatch(older);
+    if (!unlim && maxP < 900 && pList.length > maxP) {
+      const keepBots = Math.max(0, maxP - realPids.length);
+      pList = [...realPids, ...botPids.slice(0, keepBots)];
+    }
+    pList.forEach((pid) => {
+      if (rawUsers[pid]) {
+        const u = rawUsers[pid];
+        participantProfiles[pid] = {
+          id: pid,
+          nickname: u.nickname || '선수',
+          position: u.position || 'G',
+          height: u.height || 178,
+          age: u.age || 27,
+          gender: u.gender || 'M',
+          rating: u.rating || 1000,
+          isBot: Boolean(u.isBot),
+          updatedAt: u.updatedAt || 0,
+        };
+      }
+    });
+
+    let mergedLive = newer.live || older.live || null;
+    if (newer.live && older.live) {
+      const uNew = (newer.live.undo && newer.live.undo.length) || 0;
+      const uOld = (older.live.undo && older.live.undo.length) || 0;
+      mergedLive = uNew >= uOld ? { ...older.live, ...newer.live } : { ...newer.live, ...older.live };
+    }
+    // live 경기 중 새로 합류한 실제 유저가 있으면 즉시 팀/코트/스탯에 자동 편입
+    if ((newer.status === 'live' || older.status === 'live') && mergedLive && mergedLive.teams) {
+      const teamA = [...(mergedLive.teams.A || [])];
+      const teamB = [...(mergedLive.teams.B || [])];
+      const courtA = [...((mergedLive.onCourt && mergedLive.onCourt.A) || teamA.slice(0, 5))];
+      const courtB = [...((mergedLive.onCourt && mergedLive.onCourt.B) || teamB.slice(0, 5))];
+      const statsMap = { ...(mergedLive.stats || {}) };
+      const fmtObj = FORMATS[newer.format || older.format] || FORMATS['5vs5 풀코트'];
+      const needOnCourt = fmtObj ? fmtObj.onCourt : 5;
+      realPids.forEach((uid) => {
+        if (!teamA.includes(uid) && !teamB.includes(uid)) {
+          const realCountA = teamA.filter((x) => !_isBotId(x, rawUsers)).length;
+          const realCountB = teamB.filter((x) => !_isBotId(x, rawUsers)).length;
+          const targetTeam = realCountA < realCountB ? 'A' : realCountB < realCountA ? 'B' : teamA.length <= teamB.length ? 'A' : 'B';
+          if (targetTeam === 'A') {
+            teamA.unshift(uid);
+            if (!courtA.includes(uid)) {
+              if (courtA.length < needOnCourt) courtA.push(uid);
+              else {
+                const botIdx = courtA.findIndex((x) => _isBotId(x, rawUsers));
+                if (botIdx !== -1) courtA[botIdx] = uid;
+              }
+            }
+          } else {
+            teamB.unshift(uid);
+            if (!courtB.includes(uid)) {
+              if (courtB.length < needOnCourt) courtB.push(uid);
+              else {
+                const botIdx = courtB.findIndex((x) => _isBotId(x, rawUsers));
+                if (botIdx !== -1) courtB[botIdx] = uid;
+              }
+            }
+          }
+        }
+        if (!statsMap[uid]) statsMap[uid] = emptyStats();
+      });
+      mergedLive = {
+        ...mergedLive,
+        teams: { A: teamA, B: teamB },
+        onCourt: { A: courtA, B: courtB },
+        stats: statsMap,
+      };
+    }
+
+    const mergedResult = newer.result || older.result || undefined;
     return {
       ...older,
       ...newer,
+      status: rankNext >= rankPrev ? newer.status : older.status,
+      live: mergedLive,
+      ...(mergedResult ? { result: mergedResult } : {}),
       participants: pList,
+      participantProfiles,
       cancelledIds: Array.from(cancelledSet),
       removedIds: Array.from(removedSet),
       appliedAt,
       cancelledAt,
+      rev: Math.max(revPrev, revNext),
+      updatedAt: Math.max(tPrev, tNext),
     };
   };
+
   const byId = new Map();
   const order = [];
   const pushCandidate = (m) => {
@@ -777,32 +982,62 @@ function normalizeAndMergeState(base, incoming) {
   const seedList = allMatches.filter((m) => !m.isManagerCreated);
   const matches = [...mgrList, ...seedList];
 
-  // 4) 유저 병합 (모든 기기의 가입 유저·포지션 수정·경기 기록 보존)
-  const rawUsers = { ...((secondary && secondary.users) || {}), ...((primary && primary.users) || {}) };
-  if (secondary && secondary.users && primary && primary.users) {
-    Object.keys(secondary.users).forEach((uid) => {
-      if (primary.users[uid]) {
-        const u1 = secondary.users[uid];
-        const u2 = primary.users[uid];
-        const gp1 = (u1.totals && u1.totals.gp) || 0;
-        const gp2 = (u2.totals && u2.totals.gp) || 0;
-        const t1 = u1.updatedAt || u1.joinedAt || 0;
-        const t2 = u2.updatedAt || u2.joinedAt || 0;
-        if (gp1 !== gp2) {
-          rawUsers[uid] = gp1 > gp2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
-        } else {
-          rawUsers[uid] = t1 > t2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
+  // 4.5) 종료된(finished) 매치의 공식 결과(result.rows)가 유저 프로필(games/totals/rating)에 누락된 경우 자동 복원
+  matches.forEach((m) => {
+    if (m && m.status === 'finished' && m.result && Array.isArray(m.result.rows)) {
+      const mid = m.id;
+      m.result.rows.forEach((r) => {
+        const uid = r && r.uid;
+        if (!uid || !rawUsers[uid]) return;
+        const u = rawUsers[uid];
+        const games = Array.isArray(u.games) ? u.games : [];
+        if (!games.some((g) => g && g.matchId === mid)) {
+          const st = r.stats || emptyStats();
+          const t = { ...(u.totals || emptyTotals()) };
+          t.gp = (t.gp || 0) + 1;
+          if (r.won) t.wins = (t.wins || 0) + 1;
+          ['pts', 'reb', 'ast', 'stl', 'blk', 'tov'].forEach((k) => {
+            t[k] = (t[k] || 0) + (st[k] || 0);
+          });
+          const gEntry = {
+            matchId: mid,
+            title: m.title || '공식 매치',
+            date: m.datetime,
+            team: r.team,
+            won: r.won,
+            score: `${m.result.scoreA}:${m.result.scoreB}`,
+            stats: st,
+            per: r.per,
+            W: r.W,
+            delta: r.delta,
+            before: r.before,
+            after: r.after,
+            badges: r.badges || [],
+          };
+          const hist = Array.isArray(u.history) ? [...u.history] : [{ label: '가입', rating: 1000, delta: 0 }];
+          hist.push({ label: (m.title || '매치').split(' ')[0], rating: r.after, delta: r.delta });
+          rawUsers[uid] = {
+            ...u,
+            rating: r.after !== undefined ? r.after : u.rating,
+            lastDelta: r.delta !== undefined ? r.delta : (u.lastDelta || 0),
+            totals: t,
+            badges: Array.from(new Set([...(u.badges || []), ...(r.badges || [])])),
+            history: hist.slice(-12),
+            games: [gEntry, ...games].slice(0, 20),
+            rev: (u.rev || 0) + 1,
+            updatedAt: Math.max(u.updatedAt || 0, m.updatedAt || 0),
+          };
         }
-      }
-    });
-  }
+      });
+    }
+  });
+
   const users = Object.fromEntries(Object.entries(rawUsers).map(([k, u]) => {
     const birthDate = u.birthDate || `${new Date().getFullYear() - (u.age || 27)}-05-15`;
     return [k, { ...u, birthDate, age: calcAge(birthDate, u.age), gender: u.gender || 'M' }];
   }));
 
   // 5) 기기별 전용 세션 키(SESSION_KEY = 'gt_my_session_v2')에서만 auth / meId 로드
-  // SESSION_KEY가 비어있으면 폴링이나 병합 시 절대 auth나 meId를 되살리지 않음
   const mySession = loadMySession();
   const auth = mySession.auth || null;
   const meId = auth ? (mySession.meId || null) : null;
@@ -831,15 +1066,22 @@ function readRawStorageState() {
 
 function stateFingerprint(s) {
   if (!s) return '';
-  const mKey = (s.matches || []).map((m) => `${m.id}:${m.status}:${(m.participants || []).join(',')}:${m.updatedAt || m.createdAt || 0}:${m.live ? m.live.undo.length : 0}`).join('|');
+  const mKey = (s.matches || []).map((m) => `${m.id}:${m.status}:${m.rev || 0}:${(m.participants || []).join(',')}:${m.updatedAt || m.createdAt || 0}:${m.live ? m.live.undo.length : 0}:${m.live && m.live.onCourt ? [...(m.live.onCourt.A || []), ...(m.live.onCourt.B || [])].join(',') : ''}`).join('|');
   const cKey = (s.customCourts || []).map((c) => c.name).join(',');
-  const uAllKey = Object.values(s.users || {}).map((u) => `${u.id}:${u.nickname}:${u.position}:${u.rating}:${u.updatedAt || 0}`).sort().join('|');
+  const uAllKey = Object.values(s.users || {}).map((u) => `${u.id}:${u.nickname}:${u.position}:${u.rating}:${(u.totals && u.totals.gp) || 0}:${u.rev || 0}`).sort().join('|');
   return `${Boolean(s.auth)}#${s.meId || ''}#${mKey}#${cKey}#${uAllKey}#${s.reveal ? s.reveal.matchId : ''}`;
 }
 /* =====================================================================
  * 5. GLOBAL STATE (Reducer + LocalStorage)
  * ===================================================================== */
-const mapMatch = (state, id, fn) => ({ ...state, matches: state.matches.map((m) => (m.id === id ? { ...fn(m), updatedAt: Date.now() } : m)) });
+const mapMatch = (state, id, fn) => ({
+  ...state,
+  matches: state.matches.map((m) => {
+    if (m.id !== id) return m;
+    const updated = fn(m);
+    return { ...updated, rev: (updated.rev ?? m.rev ?? 0) + 1, updatedAt: Date.now() };
+  }),
+});
 
 function coreReducer(state, a) {
   switch (a.type) {
@@ -878,7 +1120,7 @@ function coreReducer(state, a) {
       const u = {
         id, ...a.profile, email, provider, isBot: false, rating: 1000, sigma: 8.33, totals: emptyTotals(),
         history: [{ label: '가입', rating: 1000, delta: 0 }], lastDelta: 0, badges: [], games: [],
-        joinedAt: nowTs, updatedAt: nowTs,
+        rev: 1, joinedAt: nowTs, updatedAt: nowTs,
       };
       saveMySession(authObj, id);
       try { localStorage.setItem(LAST_KAKAO_UID_KEY, id); } catch (e) {}
@@ -888,21 +1130,92 @@ function coreReducer(state, a) {
       if (!state.meId) return state;
       const nowTs = Date.now();
       const meUser = state.users && state.users[state.meId]
-        ? { ...state.users[state.meId], updatedAt: nowTs }
+        ? { ...state.users[state.meId], rev: (state.users[state.meId].rev || 0) + 1, updatedAt: nowTs }
         : null;
       const nextUsers = meUser ? { ...state.users, [state.meId]: meUser } : state.users;
-      return mapMatch({ ...state, users: nextUsers }, a.matchId, (m) =>
-        m.status === 'open' && (isUnlimitedMatch(m) || m.participants.length < m.maxPlayers) && !m.participants.includes(state.meId)
-          ? {
-              ...m,
-              participants: [...m.participants, state.meId],
-              cancelledIds: (m.cancelledIds || []).filter((x) => x !== state.meId),
-              removedIds: (m.removedIds || []).filter((x) => x !== state.meId),
-              appliedAt: { ...((m && m.appliedAt) || {}), [state.meId]: nowTs },
-              lastOp: { type: 'APPLY', uid: state.meId, at: nowTs },
+      return mapMatch({ ...state, users: nextUsers }, a.matchId, (m) => {
+        if (m.status === 'finished' || m.status === 'cancelled') return m;
+        if (m.participants.includes(state.meId)) return m;
+        let nextParticipants = [...m.participants];
+        const unlimited = isUnlimitedMatch(m);
+        if (!unlimited && nextParticipants.length >= m.maxPlayers) {
+          // 정원이 찼더라도 게스트 봇이 있으면 봇 1명을 자동 제외하고 실제 친구(유저)를 최우선 편입!
+          const botIdx = nextParticipants.findIndex((id) => _isBotId(id, nextUsers));
+          if (botIdx !== -1) {
+            nextParticipants.splice(botIdx, 1);
+          } else {
+            return m;
+          }
+        }
+        // 실제 유저가 항상 봇보다 앞쪽에 오도록 배치
+        const realP = nextParticipants.filter((id) => !_isBotId(id, nextUsers));
+        const botP = nextParticipants.filter((id) => _isBotId(id, nextUsers));
+        nextParticipants = [...realP, state.meId, ...botP];
+
+        const nextProfiles = {
+          ...((m && m.participantProfiles) || {}),
+          ...(meUser ? {
+            [state.meId]: {
+              id: state.meId,
+              nickname: meUser.nickname || '선수',
+              position: meUser.position || 'G',
+              height: meUser.height || 178,
+              age: meUser.age || 27,
+              gender: meUser.gender || 'M',
+              rating: meUser.rating || 1000,
+              isBot: false,
+              updatedAt: nowTs,
             }
-          : m
-      );
+          } : {}),
+        };
+
+        let nextLive = m.live;
+        if (m.status === 'live' && m.live && m.live.teams) {
+          const teamA = [...(m.live.teams.A || [])];
+          const teamB = [...(m.live.teams.B || [])];
+          const courtA = [...((m.live.onCourt && m.live.onCourt.A) || [])];
+          const courtB = [...((m.live.onCourt && m.live.onCourt.B) || [])];
+          const fmtObj = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
+          const needOnCourt = fmtObj ? fmtObj.onCourt : 5;
+          if (!teamA.includes(state.meId) && !teamB.includes(state.meId)) {
+            const realA = teamA.filter((x) => !_isBotId(x, nextUsers)).length;
+            const realB = teamB.filter((x) => !_isBotId(x, nextUsers)).length;
+            const target = realA < realB ? 'A' : realB < realA ? 'B' : teamA.length <= teamB.length ? 'A' : 'B';
+            if (target === 'A') {
+              teamA.unshift(state.meId);
+              if (courtA.length < needOnCourt) courtA.push(state.meId);
+              else {
+                const bIdx = courtA.findIndex((x) => _isBotId(x, nextUsers));
+                if (bIdx !== -1) courtA[bIdx] = state.meId;
+              }
+            } else {
+              teamB.unshift(state.meId);
+              if (courtB.length < needOnCourt) courtB.push(state.meId);
+              else {
+                const bIdx = courtB.findIndex((x) => _isBotId(x, nextUsers));
+                if (bIdx !== -1) courtB[bIdx] = state.meId;
+              }
+            }
+          }
+          nextLive = {
+            ...m.live,
+            teams: { A: teamA, B: teamB },
+            onCourt: { A: courtA, B: courtB },
+            stats: { ...(m.live.stats || {}), [state.meId]: (m.live.stats && m.live.stats[state.meId]) || emptyStats() },
+          };
+        }
+
+        return {
+          ...m,
+          participants: nextParticipants,
+          participantProfiles: nextProfiles,
+          live: nextLive,
+          cancelledIds: (m.cancelledIds || []).filter((x) => x !== state.meId),
+          removedIds: (m.removedIds || []).filter((x) => x !== state.meId),
+          appliedAt: { ...((m && m.appliedAt) || {}), [state.meId]: nowTs },
+          lastOp: { type: 'APPLY', uid: state.meId, at: nowTs },
+        };
+      });
     }
     case 'CANCEL': {
       if (!state.meId) return state;
@@ -931,6 +1244,7 @@ function coreReducer(state, a) {
       const newMatch = {
         ...a.match,
         isManagerCreated: true,
+        rev: 1,
         createdAt: a.match.createdAt || Date.now(),
         updatedAt: Date.now(),
       };
@@ -958,6 +1272,7 @@ function coreReducer(state, a) {
         ...a.profile,
         birthDate,
         age: calcAge(birthDate, a.profile.age ?? prev.age),
+        rev: (prev.rev || 0) + 1,
         updatedAt: Date.now(),
       };
       return { ...state, users: { ...state.users, [id]: updated } };
@@ -969,6 +1284,7 @@ function coreReducer(state, a) {
       const updatedUser = {
         ...state.users[uid],
         position: pos,
+        rev: (state.users[uid].rev || 0) + 1,
         updatedAt: Date.now(),
       };
       return { ...state, users: { ...state.users, [uid]: updatedUser } };
@@ -996,8 +1312,9 @@ function coreReducer(state, a) {
       return mapMatch(state, a.matchId, (m) => {
         const pool = Object.values(state.users).filter((u) => u.isBot && !m.participants.includes(u.id)).map((u) => u.id);
         pool.sort(() => Math.random() - 0.5);
-        const cap = isUnlimitedMatch(m) ? Math.max(12, m.participants.length + 6) : Math.max(m.maxPlayers || 10, a.upTo || 0);
-        const target = a.upTo ? a.upTo : cap;
+        const fmtObj = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
+        const minForGame = (fmtObj ? fmtObj.onCourt : 5) * 2;
+        const target = a.upTo ? a.upTo : Math.max(minForGame, m.participants.length);
         const need = Math.max(0, target - m.participants.length);
         const added = pool.slice(0, need);
         const nowTs = Date.now();
@@ -1024,16 +1341,18 @@ function coreReducer(state, a) {
           status: 'live',
           live: {
             teams: a.teams, onCourt: a.starters,
-            stats: Object.fromEntries([...a.teams.A, ...a.teams.B].map((id) => [id, emptyStats()])),
+            stats: Object.fromEntries(allTeamIds.map((id) => [id, emptyStats()])),
             undo: [], startedAt: nowTs,
           },
+          lastOp: { type: 'START_GAME', at: nowTs },
         };
       });
     case 'STAT':
       return mapMatch(state, a.matchId, (m) => {
         if (!m.live) return m;
-        const s = { ...m.live.stats[a.uid] };
-        s[a.key] += a.amount;
+        const curStats = (m.live.stats && m.live.stats[a.uid]) || emptyStats();
+        const s = { ...curStats };
+        s[a.key] = (s[a.key] || 0) + a.amount;
         return { ...m, live: { ...m.live, stats: { ...m.live.stats, [a.uid]: s }, undo: [...m.live.undo, { uid: a.uid, key: a.key, amount: a.amount, t: Date.now() }].slice(-300) } };
       });
     case 'UNDO':
@@ -1041,8 +1360,9 @@ function coreReducer(state, a) {
         if (!m.live || !m.live.undo.length) return m;
         const undo = [...m.live.undo];
         const last = undo.pop();
-        const s = { ...m.live.stats[last.uid] };
-        s[last.key] = Math.max(0, s[last.key] - last.amount);
+        const curStats = (m.live.stats && m.live.stats[last.uid]) || emptyStats();
+        const s = { ...curStats };
+        s[last.key] = Math.max(0, (s[last.key] || 0) - last.amount);
         return { ...m, live: { ...m.live, undo, stats: { ...m.live.stats, [last.uid]: s } } };
       });
     case 'SUB':
@@ -1082,6 +1402,8 @@ const useStore = () => useContext(Store);
 // 동기식 영속화 & 멀티채널 브로드캐스트 래퍼 리듀서
 let _bc = null;
 try { if (typeof BroadcastChannel !== 'undefined') _bc = new BroadcastChannel('garbagetime_sync'); } catch (e) {}
+let _inFlightPosts = 0;
+let _serverSyncCallback = null;
 
 function pushStateEverywhere(nextState, isReset = false) {
   try {
@@ -1093,6 +1415,7 @@ function pushStateEverywhere(nextState, isReset = false) {
     localStorage.setItem(STORAGE_KEY, raw);
     if (_bc) _bc.postMessage({ type: 'SYNC_STATE', state: sharedPayload });
     if (location.protocol.startsWith('http')) {
+      _inFlightPosts += 1;
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1104,12 +1427,18 @@ function pushStateEverywhere(nextState, isReset = false) {
             const merged = normalizeAndMergeState(nextState, d.state);
             const mergedShared = { ...merged, auth: null, meId: null };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedShared));
+            if (_serverSyncCallback) _serverSyncCallback(mergedShared);
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          _inFlightPosts = Math.max(0, _inFlightPosts - 1);
+        });
     }
   } catch (e) {}
 }
+
+const LOCAL_ONLY_ACTIONS = new Set(['LOGIN', 'LOGOUT', 'SEEN', 'CLEAR_REVEAL', 'HYDRATE']);
 
 function reducer(rawState, a) {
   if (a.type === 'RESET') {
@@ -1132,15 +1461,15 @@ function reducer(rawState, a) {
   }
   if (a.type === 'LOGOUT') {
     saveMySession(null, null);
-    const loggedOut = { ...rawState, auth: null, meId: null };
-    pushStateEverywhere(loggedOut, false);
-    return loggedOut;
+    return { ...rawState, auth: null, meId: null };
   }
   // 액션 실행 직전 localStorage 최신 상태와 먼저 병합하여 다른 탭의 변경사항(신규 매치 등) 덮어쓰기 방지
   const latestBase = normalizeAndMergeState(rawState, readRawStorageState());
   const nextRaw = coreReducer(latestBase, a);
   const mergedNext = normalizeAndMergeState(latestBase, nextRaw);
-  pushStateEverywhere(mergedNext, false);
+  if (!LOCAL_ONLY_ACTIONS.has(a.type)) {
+    pushStateEverywhere(mergedNext, false);
+  }
   return mergedNext;
 }
 
@@ -1167,6 +1496,7 @@ function useSharedPersistence(state, dispatch, setTheme) {
         dispatch({ type: 'HYDRATE', state: merged });
       }
     };
+    _serverSyncCallback = applyIncoming;
 
     const syncFromLocalAndServer = () => {
       const localS = readRawStorageState();
@@ -1174,10 +1504,11 @@ function useSharedPersistence(state, dispatch, setTheme) {
       if (localS) applyIncoming(localS);
       else if (mgrMatches.length > 0) applyIncoming({ ...stateRef.current, matches: [...mgrMatches, ...(stateRef.current.matches || [])] });
 
-      if (location.protocol.startsWith('http')) {
+      if (location.protocol.startsWith('http') && _inFlightPosts === 0) {
         fetch('/api/state', { cache: 'no-store' })
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
+            if (_inFlightPosts > 0) return;
             if (d && d.ok && d.state && d.state.version === 2) {
               // 클라우드 서버 동기화 시: 매치·유저·체육관 데이터는 실시간 공유하되,
               // 각 스마트폰/브라우저의 로그인 세션(auth, meId)은 SESSION_KEY 기준으로 독립 유지
@@ -1221,6 +1552,7 @@ function useSharedPersistence(state, dispatch, setTheme) {
     const timer = setInterval(syncFromLocalAndServer, 1000);
 
     return () => {
+      if (_serverSyncCallback === applyIncoming) _serverSyncCallback = null;
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', syncFromLocalAndServer);
       window.removeEventListener('pageshow', syncFromLocalAndServer);
@@ -2433,10 +2765,16 @@ function MatchDetailModal({ match, open, onClose }) {
   const joined = m.participants.includes(state.meId);
   const st = matchStatus(m);
   const unlimited = isUnlimitedMatch(m);
+  const hasBotSlot = (m.participants || []).some((id) => _isBotId(id, state.users));
   const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
+  const canJoinSlot = unlimited || left > 0 || hasBotSlot;
   const addr = getCourtAddress(m, state);
   const fmtInfo = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
-  const apply = () => { dispatch({ type: 'APPLY', matchId: m.id }); vibrate(); toast('참가 신청 완료! 경기 당일 매니저가 팀을 배정합니다 🏀', 'success'); };
+  const apply = () => {
+    dispatch({ type: 'APPLY', matchId: m.id });
+    vibrate();
+    toast(m.status === 'live' ? '진행 중인 경기에 즉시 합류했습니다! 매니저 스탯 패드에 내 이름이 표시됩니다 🏀' : '참가 신청 완료! 매니저 콘솔에 내 닉네임이 즉시 반영됩니다 🏀', 'success');
+  };
   const cancel = () => { dispatch({ type: 'CANCEL', matchId: m.id }); toast('참가 신청이 취소되었습니다'); };
 
   return (
@@ -2462,7 +2800,7 @@ function MatchDetailModal({ match, open, onClose }) {
         <div className="grid grid-cols-2 gap-2 text-xs">
           {[
             ['매치 포맷', `${m.format} (${fmtInfo.onCourt}인 출전)`],
-            ['모집 인원', unlimited ? `참가 ${m.participants.length}명 · 인원 무제한` : `${m.participants.length} / ${m.maxPlayers}명 (${left > 0 ? `${left}자리 남음` : '마감'})`],
+            ['모집 인원', unlimited ? `참가 ${m.participants.length}명 · 인원 무제한` : `${m.participants.length} / ${m.maxPlayers}명 (${left > 0 ? `${left}자리 남음` : hasBotSlot ? '참가 신청 가능' : '마감'})`],
             ['권장 티어', m.recTier],
             ['담당 매니저', m.manager],
           ].map(([k, v]) => (
@@ -2480,8 +2818,7 @@ function MatchDetailModal({ match, open, onClose }) {
           </div>
           <div className="grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
             {m.participants.map((id) => {
-              const u = state.users[id];
-              if (!u) return null;
+              const u = (state.users && state.users[id]) || (m.participantProfiles && m.participantProfiles[id]) || { id, nickname: '참가 선수', position: 'G', rating: 1000 };
               return (
                 <div key={id} className="flex items-center gap-2 rounded-xl border border-white/[.05] bg-ink/60 px-2.5 py-2">
                   <Avatar user={u} size={26} ring={id === state.meId} />
@@ -2499,11 +2836,13 @@ function MatchDetailModal({ match, open, onClose }) {
           {m.status === 'open' ? (
             joined ? (
               <Btn variant="ghost" className="w-full" onClick={cancel}><Icon name="X" size={15} /> 신청 취소</Btn>
-            ) : (unlimited || left > 0) ? (
+            ) : canJoinSlot ? (
               <Btn className="w-full" onClick={apply}><Icon name="UserPlus" size={16} /> 참가 신청 · {fmtWon(m.fee)}</Btn>
             ) : (
               <Btn variant="ghost" disabled className="w-full">모집 마감</Btn>
             )
+          ) : m.status === 'live' && !joined && canJoinSlot ? (
+            <Btn className="w-full" onClick={apply}><Icon name="Zap" size={16} /> 진행 중인 경기 즉시 합류하기</Btn>
           ) : (
             <Btn variant="ghost" className="w-full" onClick={onClose}>닫기</Btn>
           )}
@@ -2576,7 +2915,9 @@ function MatchCard({ m, compact = false }) {
   const isMgr = isManagerMatch(m);
   const joined = m.participants.includes(state.meId);
   const st = matchStatus(m);
+  const hasBotSlot = (m.participants || []).some((id) => _isBotId(id, state.users));
   const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
+  const canJoinSlot = unlimited || left > 0 || hasBotSlot;
   const pct = unlimited ? 100 : Math.min(100, (m.participants.length / Math.max(1, m.maxPlayers)) * 100);
   const d = new Date(m.datetime);
   const dow = d.getDay();
@@ -2590,16 +2931,26 @@ function MatchCard({ m, compact = false }) {
   const endTimeStr = fmtTime(m.datetime + 120 * 60000);
   const fmtInfo = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
 
-  const apply = () => { dispatch({ type: 'APPLY', matchId: m.id }); vibrate(); toast('참가 신청 완료! 경기 당일 매니저가 팀을 배정합니다 🏀', 'success'); };
+  const apply = () => {
+    dispatch({ type: 'APPLY', matchId: m.id });
+    vibrate();
+    toast(m.status === 'live' ? '진행 중인 경기에 즉시 합류했습니다! 매니저 스탯 패드에 내 이름이 표시됩니다 🏀' : '참가 신청 완료! 매니저 콘솔에 내 닉네임이 즉시 반영됩니다 🏀', 'success');
+  };
   const cancel = () => { dispatch({ type: 'CANCEL', matchId: m.id }); toast('참가 신청이 취소되었습니다'); };
 
   let action;
-  if (m.status === 'live') action = <Btn variant="ghost" disabled className="w-full"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> 경기 진행 중 · 매니저 기록 중</Btn>;
+  if (m.status === 'live') {
+    action = joined
+      ? <Btn variant="ghost" disabled className="w-full"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> 경기 진행 중 · 내 스탯 실시간 기록 중</Btn>
+      : canJoinSlot
+        ? <Btn className="w-full" onClick={apply}><Icon name="Zap" size={16} /> 진행 중인 경기 즉시 합류하기 · {fmtWon(m.fee)}</Btn>
+        : <Btn variant="ghost" disabled className="w-full"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> 경기 진행 중 · 매니저 기록 중</Btn>;
+  }
   else if (m.status === 'cancelled') action = <Btn variant="ghost" disabled className="w-full"><Icon name="Ban" size={15} /> 매니저에 의해 취소된 매치</Btn>;
   else if (m.status === 'closed') action = <Btn variant="ghost" disabled className="w-full">{joined ? '✓ 참가 확정 · 팀 배정 대기 중' : '신청 마감 · 팀 배정 대기 중'}</Btn>;
   else if (m.status === 'finished') action = <Btn variant="ghost" disabled className="w-full">경기 종료 · 공식 기록 반영 완료</Btn>;
   else if (joined) action = <Btn variant="ghost" className="w-full" onClick={cancel}><Icon name="X" size={15} /> 신청 취소</Btn>;
-  else if (!unlimited && left <= 0) action = <Btn variant="ghost" disabled className="w-full">모집 마감</Btn>;
+  else if (!canJoinSlot) action = <Btn variant="ghost" disabled className="w-full">모집 마감</Btn>;
   else action = <Btn className="w-full" onClick={apply}><Icon name="UserPlus" size={16} /> 참가 신청 · {fmtWon(m.fee)}</Btn>;
 
   return (

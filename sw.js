@@ -1,5 +1,5 @@
 // 가비지타임 Service Worker — API 요청 바이패스 & HTML 최신본 우선(network-first no-store)
-const CACHE = 'garbagetime-v2';
+const CACHE = 'garbagetime-v3';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
