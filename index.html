@@ -514,96 +514,60 @@ function computeBadges(t) {
 function runEngine(state, matchId) {
   const m = state.matches.find((x) => x.id === matchId);
   if (!m || !m.live) return state;
-  const nowTs = Date.now();
-  const users = { ...state.users };
-  const pProfiles = (m && m.participantProfiles) || {};
-  Object.keys(pProfiles).forEach((uid) => {
-    if (uid && pProfiles[uid] && !users[uid]) users[uid] = { ...pProfiles[uid] };
-  });
-
-  const teams = {
-    A: [...((m.live.teams && m.live.teams.A) || [])],
-    B: [...((m.live.teams && m.live.teams.B) || [])],
-  };
-  const stats = { ...(m.live.stats || {}) };
-
-  // 참가 신청자(m.participants) 중 팀에 누락된 실제 유저가 있으면 자동 편입하여 레이팅/기록에 반드시 포함
-  (m.participants || []).forEach((pid) => {
-    if (!pid) return;
-    if (!teams.A.includes(pid) && !teams.B.includes(pid)) {
-      const isBot = (users[pid] && users[pid].isBot) || String(pid).startsWith('bot_');
-      if (!isBot) {
-        const realA = teams.A.filter((x) => !(users[x]?.isBot || String(x).startsWith('bot_'))).length;
-        const realB = teams.B.filter((x) => !(users[x]?.isBot || String(x).startsWith('bot_'))).length;
-        const target = (realA < realB || (realA === realB && teams.A.length <= teams.B.length)) ? 'A' : 'B';
-        teams[target].push(pid);
-      }
-    }
-    if (!stats[pid]) stats[pid] = emptyStats();
-  });
-  [...teams.A, ...teams.B].forEach((pid) => {
-    if (!stats[pid]) stats[pid] = emptyStats();
-  });
-
-  const teamScore = (t) => teams[t].reduce((s, id) => s + ((stats[id] && stats[id].pts) || 0), 0);
+  const { teams, stats } = m.live;
+  const teamScore = (t) => teams[t].reduce((s, id) => s + stats[id].pts, 0);
   const scoreA = teamScore('A'), scoreB = teamScore('B');
   const winner = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : 'D';
+  const users = { ...state.users };
   const rows = [];
   const teamAvgs = {};
 
   ['A', 'B'].forEach((t) => {
     const ids = teams[t];
-    const abeis = ids.map((id) => calcABEi(stats[id] || emptyStats()));
+    const abeis = ids.map((id) => calcABEi(stats[id]));
     // 유동 인원 대응: 실제 출전 팀 인원수(team_players.length)로 나눔
     const teamAvg = ids.length ? abeis.reduce((a, b) => a + b, 0) / ids.length : 0;
     teamAvgs[t] = teamAvg;
     ids.forEach((id, i) => {
-      const u = users[id] || pProfiles[id];
+      const u = users[id];
       if (!u) return;
-      const st = stats[id] || emptyStats();
       const abei = abeis[i];
       const weight = calcWeight(abei, teamAvg);
       const result = winner === 'D' ? 'D' : winner === t ? 'W' : 'L';
       const delta = calcDelta(result, weight);
-      const before = typeof u.rating === 'number' ? u.rating : 1000;
+      const before = u.rating;
       const after = Math.max(0, before + delta);
-      const totals = { ...emptyTotals(), ...(u.totals || {}) };
+      const totals = { ...emptyTotals(), ...u.totals };
       totals.gp += 1;
       if (result === 'W') totals.wins += 1; else if (result === 'L') totals.losses += 1; else totals.draws += 1;
-      STAT_KEYS.forEach((k) => (totals[k] += (st[k] || 0)));
+      STAT_KEYS.forEach((k) => (totals[k] += stats[id][k]));
       totals.abei += abei;
       const game = {
         matchId, title: m.title, court: m.court, date: m.datetime, team: t, result,
-        stats: { ...st }, abei, teamAvg, weight, delta, before, after,
+        stats: { ...stats[id] }, abei, teamAvg, weight, delta, before, after,
         score: { A: scoreA, B: scoreB }, teamSize: ids.length,
       };
-      const prevGames = (u.games || []).filter((g) => g && g.matchId !== matchId);
       users[id] = {
         ...u,
         rating: after,
         lastDelta: delta,
-        sigma: Math.max(1.5, +((u.sigma || 8.33) * 0.92).toFixed(2)),
+        sigma: Math.max(1.5, +(u.sigma * 0.92).toFixed(2)),
         totals,
         badges: computeBadges(totals),
-        history: [...(u.history || [{ label: '가입', rating: 1000, delta: 0 }]), { label: fmtShort(m.datetime), rating: after, delta, matchId }],
-        games: [game, ...prevGames].slice(0, 40),
-        rev: (u.rev || 0) + 1,
-        updatedAt: nowTs,
+        history: [...u.history, { label: fmtShort(m.datetime), rating: after, delta, matchId }],
+        games: [game, ...(u.games || [])].slice(0, 40), updatedAt: Date.now(),
       };
       rows.push({ id, nickname: u.nickname, position: u.position, ...game, tierBefore: getTier(before).id, tierAfter: getTier(after).id });
     });
   });
 
-  const result = { scoreA, scoreB, winner, rows, teamAvgs, submittedAt: nowTs };
+  const result = { scoreA, scoreB, winner, rows, teamAvgs, submittedAt: Date.now() };
+  const inMatch = teams.A.includes(state.meId) || teams.B.includes(state.meId);
   return {
     ...state,
     users,
-    matches: state.matches.map((x) => (
-      x.id === matchId
-        ? { ...x, status: 'finished', live: { ...x.live, teams, stats }, result, rev: (x.rev || 0) + 1, updatedAt: nowTs, lastOp: { type: 'SUBMIT', at: nowTs } }
-        : x
-    )),
-    reveal: { matchId, at: nowTs },
+    matches: state.matches.map((x) => (x.id === matchId ? { ...x, status: 'finished', result, updatedAt: Date.now() } : x)),
+    reveal: { matchId, at: Date.now() },
   };
 }
 
@@ -684,21 +648,6 @@ function loadState() {
 
 
 // 탭/브라우저/서버 간 상태 병합 유틸 (매니저 개설 매치 및 멀티유저 참가자 유실 원천 방지)
-function _statusRank(m) {
-  if (!m) return 0;
-  const st = m.status || 'open';
-  if (st === 'finished') return 4;
-  if (st === 'cancelled') return 3;
-  if (st === 'live') return 2;
-  return 1; // open, closed
-}
-function _isBotId(uid, usersMap) {
-  if (!uid) return true;
-  if (String(uid).startsWith('bot_')) return true;
-  const u = usersMap && usersMap[uid];
-  return Boolean(u && u.isBot);
-}
-
 function normalizeAndMergeState(base, incoming) {
   const b = (base && base.version === 2 && base.users && base.matches) ? base : null;
   const inc = (incoming && incoming.version === 2 && incoming.users && incoming.matches) ? incoming : null;
@@ -724,54 +673,12 @@ function normalizeAndMergeState(base, incoming) {
   });
   const customCourts = Array.from(courtMap.values());
 
-  // 3) 유저 1차 병합 (모든 기기의 가입 유저·포지션 수정·경기 기록 보존)
-  const rawUsers = { ...((secondary && secondary.users) || {}), ...((primary && primary.users) || {}) };
-  if (secondary && secondary.users && primary && primary.users) {
-    Object.keys(secondary.users).forEach((uid) => {
-      if (primary.users[uid]) {
-        const u1 = secondary.users[uid];
-        const u2 = primary.users[uid];
-        const gp1 = (u1.totals && u1.totals.gp) || 0;
-        const gp2 = (u2.totals && u2.totals.gp) || 0;
-        const gLen1 = (u1.games && u1.games.length) || 0;
-        const gLen2 = (u2.games && u2.games.length) || 0;
-        const rev1 = u1.rev || 0;
-        const rev2 = u2.rev || 0;
-        const t1 = u1.updatedAt || u1.joinedAt || 0;
-        const t2 = u2.updatedAt || u2.joinedAt || 0;
-        const statsFromU1 = (gp1 > gp2) || (gp1 === gp2 && gLen1 > gLen2) || (gp1 === gp2 && gLen1 === gLen2 && rev1 > rev2) || (gp1 === gp2 && gLen1 === gLen2 && rev1 === rev2 && t1 >= t2);
-        const profFromU1 = (rev1 > rev2) || (rev1 === rev2 && t1 >= t2);
-        const statW = statsFromU1 ? u1 : u2;
-        const profW = profFromU1 ? u1 : u2;
-        rawUsers[uid] = {
-          ...u1,
-          ...u2,
-          ...profW,
-          rating: statW.rating !== undefined ? statW.rating : 1000,
-          lastDelta: statW.lastDelta !== undefined ? statW.lastDelta : 0,
-          sigma: statW.sigma !== undefined ? statW.sigma : 8.33,
-          totals: statW.totals || emptyTotals(),
-          badges: statW.badges || [],
-          history: statW.history || [{ label: '가입', rating: 1000, delta: 0 }],
-          games: statW.games || [],
-          rev: Math.max(rev1, rev2),
-          updatedAt: Math.max(t1, t2),
-        };
-      }
-    });
-  }
-
-  // 4) 매치 병합 (primary + secondary + gt_manager_matches_v2 전용 스토리지 + 멀티유저 참가자 CRDT 합집합 병합)
+  // 3) 매치 병합 (primary + secondary + gt_manager_matches_v2 전용 스토리지 + 멀티유저 참가자 CRDT 합집합 병합)
   const mergeMatchObj = (prev, next) => {
-    const rankPrev = _statusRank(prev);
-    const rankNext = _statusRank(next);
-    const revPrev = prev.rev || 0;
-    const revNext = next.rev || 0;
     const tPrev = prev.updatedAt || prev.createdAt || 0;
     const tNext = next.updatedAt || next.createdAt || 0;
-    const nextIsNewer = (rankNext > rankPrev) || (rankNext === rankPrev && revNext > revPrev) || (rankNext === rankPrev && revNext === revPrev && tNext >= tPrev);
-    const newer = nextIsNewer ? next : prev;
-    const older = nextIsNewer ? prev : next;
+    const newer = tNext >= tPrev ? next : prev;
+    const older = tNext >= tPrev ? prev : next;
 
     const appliedAt = { ...((older && older.appliedAt) || {}), ...((newer && newer.appliedAt) || {}) };
     if (older && older.appliedAt && newer && newer.appliedAt) {
@@ -785,33 +692,6 @@ function normalizeAndMergeState(base, incoming) {
         cancelledAt[k] = Math.max(older.cancelledAt[k] || 0, newer.cancelledAt[k] || 0);
       });
     }
-
-    const participantProfiles = {
-      ...((older && older.participantProfiles) || {}),
-      ...((newer && newer.participantProfiles) || {}),
-    };
-    Object.entries(participantProfiles).forEach(([uid, prof]) => {
-      if (uid && prof && typeof prof === 'object' && !rawUsers[uid]) {
-        rawUsers[uid] = {
-          id: uid,
-          nickname: prof.nickname || '선수',
-          position: prof.position || 'G',
-          height: prof.height || 178,
-          age: prof.age || 27,
-          gender: prof.gender || 'M',
-          isBot: Boolean(prof.isBot),
-          rating: prof.rating || 1000,
-          sigma: 8.33,
-          totals: emptyTotals(),
-          history: [{ label: '가입', rating: prof.rating || 1000, delta: 0 }],
-          lastDelta: 0,
-          badges: [],
-          games: [],
-          joinedAt: prof.updatedAt || Date.now(),
-          updatedAt: prof.updatedAt || Date.now(),
-        };
-      }
-    });
 
     const cancelledSet = new Set([...(older.cancelledIds || []), ...(newer.cancelledIds || [])]);
     const removedSet = new Set([...(older.removedIds || []), ...(newer.removedIds || [])]);
@@ -834,7 +714,7 @@ function normalizeAndMergeState(base, incoming) {
     });
 
     Object.keys(appliedAt).forEach((uid) => {
-      if ((appliedAt[uid] || 0) >= (cancelledAt[uid] || 0)) {
+      if ((appliedAt[uid] || 0) > (cancelledAt[uid] || 0)) {
         cancelledSet.delete(uid);
         removedSet.delete(uid);
       }
@@ -845,113 +725,28 @@ function normalizeAndMergeState(base, incoming) {
       }
     });
 
+    const pList = [];
     const candidates = [
       ...(older.participants || []),
       ...(newer.participants || []),
-      ...Object.keys(appliedAt).filter((uid) => (appliedAt[uid] || 0) >= (cancelledAt[uid] || 0)),
+      ...Object.keys(appliedAt).filter((uid) => (appliedAt[uid] || 0) > (cancelledAt[uid] || 0)),
     ];
-    const realPids = [];
-    const botPids = [];
     candidates.forEach((pid) => {
-      if (!pid || realPids.includes(pid) || botPids.includes(pid)) return;
+      if (!pid || pList.includes(pid)) return;
       if (!cancelledSet.has(pid) && !removedSet.has(pid)) {
-        if (_isBotId(pid, rawUsers)) botPids.push(pid);
-        else realPids.push(pid);
+        pList.push(pid);
       }
     });
-    // 실제 가입 유저(친구)들을 항상 게스트 봇보다 최우선 배치하고 정원 초과 시 봇을 자동 축출
-    let pList = [...realPids, ...botPids];
-    const maxP = Number(newer.maxPlayers ?? older.maxPlayers ?? 12);
-    const unlim = isUnlimitedMatch(newer) || isUnlimitedMatch(older);
-    if (!unlim && maxP < 900 && pList.length > maxP) {
-      const keepBots = Math.max(0, maxP - realPids.length);
-      pList = [...realPids, ...botPids.slice(0, keepBots)];
-    }
-    pList.forEach((pid) => {
-      if (rawUsers[pid]) {
-        const u = rawUsers[pid];
-        participantProfiles[pid] = {
-          id: pid,
-          nickname: u.nickname || '선수',
-          position: u.position || 'G',
-          height: u.height || 178,
-          age: u.age || 27,
-          gender: u.gender || 'M',
-          rating: u.rating || 1000,
-          isBot: Boolean(u.isBot),
-          updatedAt: u.updatedAt || 0,
-        };
-      }
-    });
-
-    let mergedLive = newer.live || older.live || null;
-    if (newer.live && older.live) {
-      const uNew = (newer.live.undo && newer.live.undo.length) || 0;
-      const uOld = (older.live.undo && older.live.undo.length) || 0;
-      mergedLive = uNew >= uOld ? { ...older.live, ...newer.live } : { ...newer.live, ...older.live };
-    }
-    // live 경기 중 새로 합류한 실제 유저가 있으면 즉시 팀/코트/스탯에 자동 편입
-    if ((newer.status === 'live' || older.status === 'live') && mergedLive && mergedLive.teams) {
-      const teamA = [...(mergedLive.teams.A || [])];
-      const teamB = [...(mergedLive.teams.B || [])];
-      const courtA = [...((mergedLive.onCourt && mergedLive.onCourt.A) || teamA.slice(0, 5))];
-      const courtB = [...((mergedLive.onCourt && mergedLive.onCourt.B) || teamB.slice(0, 5))];
-      const statsMap = { ...(mergedLive.stats || {}) };
-      const fmtObj = FORMATS[newer.format || older.format] || FORMATS['5vs5 풀코트'];
-      const needOnCourt = fmtObj ? fmtObj.onCourt : 5;
-      realPids.forEach((uid) => {
-        if (!teamA.includes(uid) && !teamB.includes(uid)) {
-          const realCountA = teamA.filter((x) => !_isBotId(x, rawUsers)).length;
-          const realCountB = teamB.filter((x) => !_isBotId(x, rawUsers)).length;
-          const targetTeam = realCountA < realCountB ? 'A' : realCountB < realCountA ? 'B' : teamA.length <= teamB.length ? 'A' : 'B';
-          if (targetTeam === 'A') {
-            teamA.unshift(uid);
-            if (!courtA.includes(uid)) {
-              if (courtA.length < needOnCourt) courtA.push(uid);
-              else {
-                const botIdx = courtA.findIndex((x) => _isBotId(x, rawUsers));
-                if (botIdx !== -1) courtA[botIdx] = uid;
-              }
-            }
-          } else {
-            teamB.unshift(uid);
-            if (!courtB.includes(uid)) {
-              if (courtB.length < needOnCourt) courtB.push(uid);
-              else {
-                const botIdx = courtB.findIndex((x) => _isBotId(x, rawUsers));
-                if (botIdx !== -1) courtB[botIdx] = uid;
-              }
-            }
-          }
-        }
-        if (!statsMap[uid]) statsMap[uid] = emptyStats();
-      });
-      mergedLive = {
-        ...mergedLive,
-        teams: { A: teamA, B: teamB },
-        onCourt: { A: courtA, B: courtB },
-        stats: statsMap,
-      };
-    }
-
-    const mergedResult = newer.result || older.result || undefined;
     return {
       ...older,
       ...newer,
-      status: rankNext >= rankPrev ? newer.status : older.status,
-      live: mergedLive,
-      ...(mergedResult ? { result: mergedResult } : {}),
       participants: pList,
-      participantProfiles,
       cancelledIds: Array.from(cancelledSet),
       removedIds: Array.from(removedSet),
       appliedAt,
       cancelledAt,
-      rev: Math.max(revPrev, revNext),
-      updatedAt: Math.max(tPrev, tNext),
     };
   };
-
   const byId = new Map();
   const order = [];
   const pushCandidate = (m) => {
@@ -982,62 +777,32 @@ function normalizeAndMergeState(base, incoming) {
   const seedList = allMatches.filter((m) => !m.isManagerCreated);
   const matches = [...mgrList, ...seedList];
 
-  // 4.5) 종료된(finished) 매치의 공식 결과(result.rows)가 유저 프로필(games/totals/rating)에 누락된 경우 자동 복원
-  matches.forEach((m) => {
-    if (m && m.status === 'finished' && m.result && Array.isArray(m.result.rows)) {
-      const mid = m.id;
-      m.result.rows.forEach((r) => {
-        const uid = r && r.uid;
-        if (!uid || !rawUsers[uid]) return;
-        const u = rawUsers[uid];
-        const games = Array.isArray(u.games) ? u.games : [];
-        if (!games.some((g) => g && g.matchId === mid)) {
-          const st = r.stats || emptyStats();
-          const t = { ...(u.totals || emptyTotals()) };
-          t.gp = (t.gp || 0) + 1;
-          if (r.won) t.wins = (t.wins || 0) + 1;
-          ['pts', 'reb', 'ast', 'stl', 'blk', 'tov'].forEach((k) => {
-            t[k] = (t[k] || 0) + (st[k] || 0);
-          });
-          const gEntry = {
-            matchId: mid,
-            title: m.title || '공식 매치',
-            date: m.datetime,
-            team: r.team,
-            won: r.won,
-            score: `${m.result.scoreA}:${m.result.scoreB}`,
-            stats: st,
-            per: r.per,
-            W: r.W,
-            delta: r.delta,
-            before: r.before,
-            after: r.after,
-            badges: r.badges || [],
-          };
-          const hist = Array.isArray(u.history) ? [...u.history] : [{ label: '가입', rating: 1000, delta: 0 }];
-          hist.push({ label: (m.title || '매치').split(' ')[0], rating: r.after, delta: r.delta });
-          rawUsers[uid] = {
-            ...u,
-            rating: r.after !== undefined ? r.after : u.rating,
-            lastDelta: r.delta !== undefined ? r.delta : (u.lastDelta || 0),
-            totals: t,
-            badges: Array.from(new Set([...(u.badges || []), ...(r.badges || [])])),
-            history: hist.slice(-12),
-            games: [gEntry, ...games].slice(0, 20),
-            rev: (u.rev || 0) + 1,
-            updatedAt: Math.max(u.updatedAt || 0, m.updatedAt || 0),
-          };
+  // 4) 유저 병합 (모든 기기의 가입 유저·포지션 수정·경기 기록 보존)
+  const rawUsers = { ...((secondary && secondary.users) || {}), ...((primary && primary.users) || {}) };
+  if (secondary && secondary.users && primary && primary.users) {
+    Object.keys(secondary.users).forEach((uid) => {
+      if (primary.users[uid]) {
+        const u1 = secondary.users[uid];
+        const u2 = primary.users[uid];
+        const gp1 = (u1.totals && u1.totals.gp) || 0;
+        const gp2 = (u2.totals && u2.totals.gp) || 0;
+        const t1 = u1.updatedAt || u1.joinedAt || 0;
+        const t2 = u2.updatedAt || u2.joinedAt || 0;
+        if (gp1 !== gp2) {
+          rawUsers[uid] = gp1 > gp2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
+        } else {
+          rawUsers[uid] = t1 > t2 ? { ...u2, ...u1 } : { ...u1, ...u2 };
         }
-      });
-    }
-  });
-
+      }
+    });
+  }
   const users = Object.fromEntries(Object.entries(rawUsers).map(([k, u]) => {
     const birthDate = u.birthDate || `${new Date().getFullYear() - (u.age || 27)}-05-15`;
     return [k, { ...u, birthDate, age: calcAge(birthDate, u.age), gender: u.gender || 'M' }];
   }));
 
   // 5) 기기별 전용 세션 키(SESSION_KEY = 'gt_my_session_v2')에서만 auth / meId 로드
+  // SESSION_KEY가 비어있으면 폴링이나 병합 시 절대 auth나 meId를 되살리지 않음
   const mySession = loadMySession();
   const auth = mySession.auth || null;
   const meId = auth ? (mySession.meId || null) : null;
@@ -1066,22 +831,15 @@ function readRawStorageState() {
 
 function stateFingerprint(s) {
   if (!s) return '';
-  const mKey = (s.matches || []).map((m) => `${m.id}:${m.status}:${m.rev || 0}:${(m.participants || []).join(',')}:${m.updatedAt || m.createdAt || 0}:${m.live ? m.live.undo.length : 0}:${m.live && m.live.onCourt ? [...(m.live.onCourt.A || []), ...(m.live.onCourt.B || [])].join(',') : ''}`).join('|');
+  const mKey = (s.matches || []).map((m) => `${m.id}:${m.status}:${(m.participants || []).join(',')}:${m.updatedAt || m.createdAt || 0}:${m.live ? m.live.undo.length : 0}`).join('|');
   const cKey = (s.customCourts || []).map((c) => c.name).join(',');
-  const uAllKey = Object.values(s.users || {}).map((u) => `${u.id}:${u.nickname}:${u.position}:${u.rating}:${(u.totals && u.totals.gp) || 0}:${u.rev || 0}`).sort().join('|');
+  const uAllKey = Object.values(s.users || {}).map((u) => `${u.id}:${u.nickname}:${u.position}:${u.rating}:${u.updatedAt || 0}`).sort().join('|');
   return `${Boolean(s.auth)}#${s.meId || ''}#${mKey}#${cKey}#${uAllKey}#${s.reveal ? s.reveal.matchId : ''}`;
 }
 /* =====================================================================
  * 5. GLOBAL STATE (Reducer + LocalStorage)
  * ===================================================================== */
-const mapMatch = (state, id, fn) => ({
-  ...state,
-  matches: state.matches.map((m) => {
-    if (m.id !== id) return m;
-    const updated = fn(m);
-    return { ...updated, rev: (updated.rev ?? m.rev ?? 0) + 1, updatedAt: Date.now() };
-  }),
-});
+const mapMatch = (state, id, fn) => ({ ...state, matches: state.matches.map((m) => (m.id === id ? { ...fn(m), updatedAt: Date.now() } : m)) });
 
 function coreReducer(state, a) {
   switch (a.type) {
@@ -1120,7 +878,7 @@ function coreReducer(state, a) {
       const u = {
         id, ...a.profile, email, provider, isBot: false, rating: 1000, sigma: 8.33, totals: emptyTotals(),
         history: [{ label: '가입', rating: 1000, delta: 0 }], lastDelta: 0, badges: [], games: [],
-        rev: 1, joinedAt: nowTs, updatedAt: nowTs,
+        joinedAt: nowTs, updatedAt: nowTs,
       };
       saveMySession(authObj, id);
       try { localStorage.setItem(LAST_KAKAO_UID_KEY, id); } catch (e) {}
@@ -1130,92 +888,21 @@ function coreReducer(state, a) {
       if (!state.meId) return state;
       const nowTs = Date.now();
       const meUser = state.users && state.users[state.meId]
-        ? { ...state.users[state.meId], rev: (state.users[state.meId].rev || 0) + 1, updatedAt: nowTs }
+        ? { ...state.users[state.meId], updatedAt: nowTs }
         : null;
       const nextUsers = meUser ? { ...state.users, [state.meId]: meUser } : state.users;
-      return mapMatch({ ...state, users: nextUsers }, a.matchId, (m) => {
-        if (m.status === 'finished' || m.status === 'cancelled') return m;
-        if (m.participants.includes(state.meId)) return m;
-        let nextParticipants = [...m.participants];
-        const unlimited = isUnlimitedMatch(m);
-        if (!unlimited && nextParticipants.length >= m.maxPlayers) {
-          // 정원이 찼더라도 게스트 봇이 있으면 봇 1명을 자동 제외하고 실제 친구(유저)를 최우선 편입!
-          const botIdx = nextParticipants.findIndex((id) => _isBotId(id, nextUsers));
-          if (botIdx !== -1) {
-            nextParticipants.splice(botIdx, 1);
-          } else {
-            return m;
-          }
-        }
-        // 실제 유저가 항상 봇보다 앞쪽에 오도록 배치
-        const realP = nextParticipants.filter((id) => !_isBotId(id, nextUsers));
-        const botP = nextParticipants.filter((id) => _isBotId(id, nextUsers));
-        nextParticipants = [...realP, state.meId, ...botP];
-
-        const nextProfiles = {
-          ...((m && m.participantProfiles) || {}),
-          ...(meUser ? {
-            [state.meId]: {
-              id: state.meId,
-              nickname: meUser.nickname || '선수',
-              position: meUser.position || 'G',
-              height: meUser.height || 178,
-              age: meUser.age || 27,
-              gender: meUser.gender || 'M',
-              rating: meUser.rating || 1000,
-              isBot: false,
-              updatedAt: nowTs,
+      return mapMatch({ ...state, users: nextUsers }, a.matchId, (m) =>
+        m.status === 'open' && (isUnlimitedMatch(m) || m.participants.length < m.maxPlayers) && !m.participants.includes(state.meId)
+          ? {
+              ...m,
+              participants: [...m.participants, state.meId],
+              cancelledIds: (m.cancelledIds || []).filter((x) => x !== state.meId),
+              removedIds: (m.removedIds || []).filter((x) => x !== state.meId),
+              appliedAt: { ...((m && m.appliedAt) || {}), [state.meId]: nowTs },
+              lastOp: { type: 'APPLY', uid: state.meId, at: nowTs },
             }
-          } : {}),
-        };
-
-        let nextLive = m.live;
-        if (m.status === 'live' && m.live && m.live.teams) {
-          const teamA = [...(m.live.teams.A || [])];
-          const teamB = [...(m.live.teams.B || [])];
-          const courtA = [...((m.live.onCourt && m.live.onCourt.A) || [])];
-          const courtB = [...((m.live.onCourt && m.live.onCourt.B) || [])];
-          const fmtObj = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
-          const needOnCourt = fmtObj ? fmtObj.onCourt : 5;
-          if (!teamA.includes(state.meId) && !teamB.includes(state.meId)) {
-            const realA = teamA.filter((x) => !_isBotId(x, nextUsers)).length;
-            const realB = teamB.filter((x) => !_isBotId(x, nextUsers)).length;
-            const target = realA < realB ? 'A' : realB < realA ? 'B' : teamA.length <= teamB.length ? 'A' : 'B';
-            if (target === 'A') {
-              teamA.unshift(state.meId);
-              if (courtA.length < needOnCourt) courtA.push(state.meId);
-              else {
-                const bIdx = courtA.findIndex((x) => _isBotId(x, nextUsers));
-                if (bIdx !== -1) courtA[bIdx] = state.meId;
-              }
-            } else {
-              teamB.unshift(state.meId);
-              if (courtB.length < needOnCourt) courtB.push(state.meId);
-              else {
-                const bIdx = courtB.findIndex((x) => _isBotId(x, nextUsers));
-                if (bIdx !== -1) courtB[bIdx] = state.meId;
-              }
-            }
-          }
-          nextLive = {
-            ...m.live,
-            teams: { A: teamA, B: teamB },
-            onCourt: { A: courtA, B: courtB },
-            stats: { ...(m.live.stats || {}), [state.meId]: (m.live.stats && m.live.stats[state.meId]) || emptyStats() },
-          };
-        }
-
-        return {
-          ...m,
-          participants: nextParticipants,
-          participantProfiles: nextProfiles,
-          live: nextLive,
-          cancelledIds: (m.cancelledIds || []).filter((x) => x !== state.meId),
-          removedIds: (m.removedIds || []).filter((x) => x !== state.meId),
-          appliedAt: { ...((m && m.appliedAt) || {}), [state.meId]: nowTs },
-          lastOp: { type: 'APPLY', uid: state.meId, at: nowTs },
-        };
-      });
+          : m
+      );
     }
     case 'CANCEL': {
       if (!state.meId) return state;
@@ -1244,7 +931,6 @@ function coreReducer(state, a) {
       const newMatch = {
         ...a.match,
         isManagerCreated: true,
-        rev: 1,
         createdAt: a.match.createdAt || Date.now(),
         updatedAt: Date.now(),
       };
@@ -1272,7 +958,6 @@ function coreReducer(state, a) {
         ...a.profile,
         birthDate,
         age: calcAge(birthDate, a.profile.age ?? prev.age),
-        rev: (prev.rev || 0) + 1,
         updatedAt: Date.now(),
       };
       return { ...state, users: { ...state.users, [id]: updated } };
@@ -1284,7 +969,6 @@ function coreReducer(state, a) {
       const updatedUser = {
         ...state.users[uid],
         position: pos,
-        rev: (state.users[uid].rev || 0) + 1,
         updatedAt: Date.now(),
       };
       return { ...state, users: { ...state.users, [uid]: updatedUser } };
@@ -1312,9 +996,8 @@ function coreReducer(state, a) {
       return mapMatch(state, a.matchId, (m) => {
         const pool = Object.values(state.users).filter((u) => u.isBot && !m.participants.includes(u.id)).map((u) => u.id);
         pool.sort(() => Math.random() - 0.5);
-        const fmtObj = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
-        const minForGame = (fmtObj ? fmtObj.onCourt : 5) * 2;
-        const target = a.upTo ? a.upTo : Math.max(minForGame, m.participants.length);
+        const cap = isUnlimitedMatch(m) ? Math.max(12, m.participants.length + 6) : Math.max(m.maxPlayers || 10, a.upTo || 0);
+        const target = a.upTo ? a.upTo : cap;
         const need = Math.max(0, target - m.participants.length);
         const added = pool.slice(0, need);
         const nowTs = Date.now();
@@ -1341,18 +1024,16 @@ function coreReducer(state, a) {
           status: 'live',
           live: {
             teams: a.teams, onCourt: a.starters,
-            stats: Object.fromEntries(allTeamIds.map((id) => [id, emptyStats()])),
+            stats: Object.fromEntries([...a.teams.A, ...a.teams.B].map((id) => [id, emptyStats()])),
             undo: [], startedAt: nowTs,
           },
-          lastOp: { type: 'START_GAME', at: nowTs },
         };
       });
     case 'STAT':
       return mapMatch(state, a.matchId, (m) => {
         if (!m.live) return m;
-        const curStats = (m.live.stats && m.live.stats[a.uid]) || emptyStats();
-        const s = { ...curStats };
-        s[a.key] = (s[a.key] || 0) + a.amount;
+        const s = { ...m.live.stats[a.uid] };
+        s[a.key] += a.amount;
         return { ...m, live: { ...m.live, stats: { ...m.live.stats, [a.uid]: s }, undo: [...m.live.undo, { uid: a.uid, key: a.key, amount: a.amount, t: Date.now() }].slice(-300) } };
       });
     case 'UNDO':
@@ -1360,9 +1041,8 @@ function coreReducer(state, a) {
         if (!m.live || !m.live.undo.length) return m;
         const undo = [...m.live.undo];
         const last = undo.pop();
-        const curStats = (m.live.stats && m.live.stats[last.uid]) || emptyStats();
-        const s = { ...curStats };
-        s[last.key] = Math.max(0, (s[last.key] || 0) - last.amount);
+        const s = { ...m.live.stats[last.uid] };
+        s[last.key] = Math.max(0, s[last.key] - last.amount);
         return { ...m, live: { ...m.live, undo, stats: { ...m.live.stats, [last.uid]: s } } };
       });
     case 'SUB':
@@ -1402,8 +1082,6 @@ const useStore = () => useContext(Store);
 // 동기식 영속화 & 멀티채널 브로드캐스트 래퍼 리듀서
 let _bc = null;
 try { if (typeof BroadcastChannel !== 'undefined') _bc = new BroadcastChannel('garbagetime_sync'); } catch (e) {}
-let _inFlightPosts = 0;
-let _serverSyncCallback = null;
 
 function pushStateEverywhere(nextState, isReset = false) {
   try {
@@ -1415,7 +1093,6 @@ function pushStateEverywhere(nextState, isReset = false) {
     localStorage.setItem(STORAGE_KEY, raw);
     if (_bc) _bc.postMessage({ type: 'SYNC_STATE', state: sharedPayload });
     if (location.protocol.startsWith('http')) {
-      _inFlightPosts += 1;
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1427,18 +1104,12 @@ function pushStateEverywhere(nextState, isReset = false) {
             const merged = normalizeAndMergeState(nextState, d.state);
             const mergedShared = { ...merged, auth: null, meId: null };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedShared));
-            if (_serverSyncCallback) _serverSyncCallback(mergedShared);
           }
         })
-        .catch(() => {})
-        .finally(() => {
-          _inFlightPosts = Math.max(0, _inFlightPosts - 1);
-        });
+        .catch(() => {});
     }
   } catch (e) {}
 }
-
-const LOCAL_ONLY_ACTIONS = new Set(['LOGIN', 'LOGOUT', 'SEEN', 'CLEAR_REVEAL', 'HYDRATE']);
 
 function reducer(rawState, a) {
   if (a.type === 'RESET') {
@@ -1461,15 +1132,15 @@ function reducer(rawState, a) {
   }
   if (a.type === 'LOGOUT') {
     saveMySession(null, null);
-    return { ...rawState, auth: null, meId: null };
+    const loggedOut = { ...rawState, auth: null, meId: null };
+    pushStateEverywhere(loggedOut, false);
+    return loggedOut;
   }
   // 액션 실행 직전 localStorage 최신 상태와 먼저 병합하여 다른 탭의 변경사항(신규 매치 등) 덮어쓰기 방지
   const latestBase = normalizeAndMergeState(rawState, readRawStorageState());
   const nextRaw = coreReducer(latestBase, a);
   const mergedNext = normalizeAndMergeState(latestBase, nextRaw);
-  if (!LOCAL_ONLY_ACTIONS.has(a.type)) {
-    pushStateEverywhere(mergedNext, false);
-  }
+  pushStateEverywhere(mergedNext, false);
   return mergedNext;
 }
 
@@ -1496,7 +1167,6 @@ function useSharedPersistence(state, dispatch, setTheme) {
         dispatch({ type: 'HYDRATE', state: merged });
       }
     };
-    _serverSyncCallback = applyIncoming;
 
     const syncFromLocalAndServer = () => {
       const localS = readRawStorageState();
@@ -1504,11 +1174,10 @@ function useSharedPersistence(state, dispatch, setTheme) {
       if (localS) applyIncoming(localS);
       else if (mgrMatches.length > 0) applyIncoming({ ...stateRef.current, matches: [...mgrMatches, ...(stateRef.current.matches || [])] });
 
-      if (location.protocol.startsWith('http') && _inFlightPosts === 0) {
+      if (location.protocol.startsWith('http')) {
         fetch('/api/state', { cache: 'no-store' })
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
-            if (_inFlightPosts > 0) return;
             if (d && d.ok && d.state && d.state.version === 2) {
               // 클라우드 서버 동기화 시: 매치·유저·체육관 데이터는 실시간 공유하되,
               // 각 스마트폰/브라우저의 로그인 세션(auth, meId)은 SESSION_KEY 기준으로 독립 유지
@@ -1552,7 +1221,6 @@ function useSharedPersistence(state, dispatch, setTheme) {
     const timer = setInterval(syncFromLocalAndServer, 1000);
 
     return () => {
-      if (_serverSyncCallback === applyIncoming) _serverSyncCallback = null;
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', syncFromLocalAndServer);
       window.removeEventListener('pageshow', syncFromLocalAndServer);
@@ -2258,34 +1926,49 @@ function Onboarding() {
 /* =====================================================================
  * 9. HEADER / NAV / SETTINGS  (유저 앱 — 직원 모드 진입점 없음)
  * ===================================================================== */
-const APP_VERSION = 'v1.2.0';
+const APP_VERSION = 'v1.3.0';
 
 function Header() {
   const { setTab, state, openGuide } = useStore();
   const me = state.users[state.meId];
   return (
-    <header className="sticky top-0 z-40 border-b border-white/5 bg-ink/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-white/5 bg-ink/90 backdrop-blur-xl">
       <div className="flex h-14 items-center justify-between gap-2 px-4">
         <button onClick={() => setTab('lobby')} className="flex min-w-0 items-center gap-2 active:scale-95">
-          <BallLogo size={30} />
+          <BallLogo size={28} />
           <div className="text-left leading-none">
-            <div className="font-bebas text-[22px] tracking-wider">GARBAGE<span className="text-brand"> TIME</span></div>
-            <div className="-mt-0.5 text-[9px] font-bold tracking-wider text-white/35">가비지타임</div>
+            <div className="font-bebas text-[24px] italic tracking-wider">GARBAGE<span className="text-brand">TIME</span></div>
           </div>
         </button>
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setTab('lobby');
+              vibrate(6);
+              setTimeout(() => {
+                const el = document.getElementById('gt-lobby-search-toggle');
+                if (el) el.click();
+              }, 60);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/75 transition hover:border-brand hover:text-brand active:scale-90"
+            title="매치 · 체육관 검색"
+            aria-label="검색"
+          >
+            <Icon name="Search" size={17} />
+          </button>
           {openGuide && (
             <button type="button" onClick={() => { openGuide(); vibrate(6); }}
-              className="flex h-9 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 text-[11px] font-extrabold text-white/75 transition hover:border-brand hover:text-brand active:scale-95"
-              title="이용 가이드 보기" aria-label="이용 가이드 보기">
-              <span>📖</span>
-              <span className="hidden xs:inline sm:inline">가이드</span>
+              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/75 transition hover:border-brand hover:text-brand active:scale-90"
+              title="이용 가이드 · 알림" aria-label="이용 가이드 보기">
+              <Icon name="Bell" size={17} />
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-brand" />
             </button>
           )}
           {me && (
             <button onClick={() => setTab('my')} className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 py-1 pl-1 pr-2.5 transition active:scale-95" aria-label="내 레이팅">
-              <TierEmblem rating={me.rating} size={24} />
-              <span className="font-bebas text-lg leading-none">{me.rating}</span>
+              <TierEmblem rating={me.rating} size={22} />
+              <span className="font-bebas text-base leading-none">{me.rating}</span>
             </button>
           )}
           <ThemeToggle />
@@ -2299,8 +1982,8 @@ function BottomNav() {
   const { tab, setTab, state } = useStore();
   const upcoming = state.matches.filter((m) => ['open', 'closed', 'live'].includes(m.status) && m.participants.includes(state.meId)).length;
   const items = [
-    { id: 'lobby', label: '매치 로비', icon: 'House' },
-    { id: 'mymatch', label: '내 매치', icon: 'Ticket', badge: upcoming },
+    { id: 'lobby', label: '홈', icon: 'House' },
+    { id: 'mymatch', label: '일정', icon: 'Calendar', badge: upcoming },
     { id: 'ranking', label: '랭킹', icon: 'Trophy' },
     { id: 'my', label: '마이', icon: 'User' },
   ];
@@ -2311,10 +1994,10 @@ function BottomNav() {
           const on = tab === it.id;
           return (
             <button key={it.id} onClick={() => { setTab(it.id); vibrate(6); }}
-              className={`relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition active:scale-90 ${on ? 'text-neon' : 'text-white/40 hover:text-white/70'}`}>
+              className={`relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-extrabold transition active:scale-90 ${on ? 'text-neon' : 'text-white/40 hover:text-white/70'}`}>
               {on && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-neon" />}
               <div className="relative">
-                <Icon name={it.icon} size={22} strokeWidth={on ? 2.4 : 1.8} />
+                <Icon name={it.icon} size={21} strokeWidth={on ? 2.4 : 1.8} />
                 {!!it.badge && <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[9px] text-pure">{it.badge}</span>}
               </div>
               {it.label}
@@ -2765,16 +2448,10 @@ function MatchDetailModal({ match, open, onClose }) {
   const joined = m.participants.includes(state.meId);
   const st = matchStatus(m);
   const unlimited = isUnlimitedMatch(m);
-  const hasBotSlot = (m.participants || []).some((id) => _isBotId(id, state.users));
   const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
-  const canJoinSlot = unlimited || left > 0 || hasBotSlot;
   const addr = getCourtAddress(m, state);
   const fmtInfo = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
-  const apply = () => {
-    dispatch({ type: 'APPLY', matchId: m.id });
-    vibrate();
-    toast(m.status === 'live' ? '진행 중인 경기에 즉시 합류했습니다! 매니저 스탯 패드에 내 이름이 표시됩니다 🏀' : '참가 신청 완료! 매니저 콘솔에 내 닉네임이 즉시 반영됩니다 🏀', 'success');
-  };
+  const apply = () => { dispatch({ type: 'APPLY', matchId: m.id }); vibrate(); toast('참가 신청 완료! 경기 당일 매니저가 팀을 배정합니다 🏀', 'success'); };
   const cancel = () => { dispatch({ type: 'CANCEL', matchId: m.id }); toast('참가 신청이 취소되었습니다'); };
 
   return (
@@ -2800,7 +2477,7 @@ function MatchDetailModal({ match, open, onClose }) {
         <div className="grid grid-cols-2 gap-2 text-xs">
           {[
             ['매치 포맷', `${m.format} (${fmtInfo.onCourt}인 출전)`],
-            ['모집 인원', unlimited ? `참가 ${m.participants.length}명 · 인원 무제한` : `${m.participants.length} / ${m.maxPlayers}명 (${left > 0 ? `${left}자리 남음` : hasBotSlot ? '참가 신청 가능' : '마감'})`],
+            ['모집 인원', unlimited ? `참가 ${m.participants.length}명 · 인원 무제한` : `${m.participants.length} / ${m.maxPlayers}명 (${left > 0 ? `${left}자리 남음` : '마감'})`],
             ['권장 티어', m.recTier],
             ['담당 매니저', m.manager],
           ].map(([k, v]) => (
@@ -2818,7 +2495,8 @@ function MatchDetailModal({ match, open, onClose }) {
           </div>
           <div className="grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
             {m.participants.map((id) => {
-              const u = (state.users && state.users[id]) || (m.participantProfiles && m.participantProfiles[id]) || { id, nickname: '참가 선수', position: 'G', rating: 1000 };
+              const u = state.users[id];
+              if (!u) return null;
               return (
                 <div key={id} className="flex items-center gap-2 rounded-xl border border-white/[.05] bg-ink/60 px-2.5 py-2">
                   <Avatar user={u} size={26} ring={id === state.meId} />
@@ -2836,13 +2514,11 @@ function MatchDetailModal({ match, open, onClose }) {
           {m.status === 'open' ? (
             joined ? (
               <Btn variant="ghost" className="w-full" onClick={cancel}><Icon name="X" size={15} /> 신청 취소</Btn>
-            ) : canJoinSlot ? (
+            ) : (unlimited || left > 0) ? (
               <Btn className="w-full" onClick={apply}><Icon name="UserPlus" size={16} /> 참가 신청 · {fmtWon(m.fee)}</Btn>
             ) : (
               <Btn variant="ghost" disabled className="w-full">모집 마감</Btn>
             )
-          ) : m.status === 'live' && !joined && canJoinSlot ? (
-            <Btn className="w-full" onClick={apply}><Icon name="Zap" size={16} /> 진행 중인 경기 즉시 합류하기</Btn>
           ) : (
             <Btn variant="ghost" className="w-full" onClick={onClose}>닫기</Btn>
           )}
@@ -2907,202 +2583,339 @@ function DemoGuide() {
   );
 }
 
+// 구장/매치 썸네일 그래픽 (인물 사진 없이 우리 브랜드 컬러와 코트 라인 SVG로 구성)
+function CourtThumbGraphic({ format = '5vs5 풀코트', unlimited = false, joined = false, isMgr = false, size = 84 }) {
+  const is3v3 = String(format).includes('3vs3');
+  const accent = joined ? '#00FF66' : unlimited ? '#22D3EE' : '#FF5500';
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="relative flex shrink-0 flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-ink p-2 shadow-inner"
+    >
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `radial-gradient(circle at 75% 20%, ${accent}38, transparent 68%), linear-gradient(155deg, rgba(255,255,255,0.04), transparent)`,
+        }}
+      />
+      <CourtLinesSvg color={accent} opacity={0.28} className="absolute inset-0 h-full w-full" />
+      <div className="relative flex items-center justify-between">
+        <span
+          className="rounded-md px-1.5 py-0.5 font-bebas text-[11px] font-black leading-none tracking-wider"
+          style={{ color: accent, background: `${accent}24`, border: `1px solid ${accent}66` }}
+        >
+          {is3v3 ? '3vs3' : '5vs5'}
+        </span>
+        {isMgr && <span className="h-2 w-2 rounded-full bg-brand shadow-[0_0_8px_#FF5500]" />}
+      </div>
+      <div className="relative text-left">
+        <div className="font-bebas text-xs leading-none tracking-wider text-white/85">
+          {unlimited ? 'OPEN RUN' : is3v3 ? 'HALF COURT' : 'FULL COURT'}
+        </div>
+        <div className="mt-0.5 text-[9px] font-extrabold text-white/45">
+          {unlimited ? '무제한' : '실내코트'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 구장 예약 탭(Image 1 구조)용 대형 코트 배너 카드
+function CourtVenueCard({ court, address, region, matches = [], onSelectMatch }) {
+  const { toast } = useStore();
+  const [slide, setSlide] = useState(0);
+  const nextM = matches[0];
+  const d = nextM ? new Date(nextM.datetime) : new Date();
+  const dateLabel = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DOW[d.getDay()]})`;
+  const accents = ['#FF5500', '#00FF66', '#22D3EE'];
+  const curAccent = accents[slide % accents.length];
+
+  return (
+    <div className="space-y-2.5 pt-2">
+      {/* 상단 구장명 + 우측 화살표 (Image 1: '서울 강동 송파 풋살장 >') */}
+      <button
+        type="button"
+        onClick={() => nextM && onSelectMatch && onSelectMatch(nextM)}
+        className="flex w-full items-center gap-1 text-left text-base font-extrabold text-white transition hover:text-brand"
+      >
+        <span className="truncate">{court}</span>
+        <Icon name="ChevronRight" size={17} className="shrink-0 text-white/45" />
+      </button>
+
+      {/* 대형 와이드 코트 그래픽 배너 (Image 1의 와이드 구장 사진 영역을 우리 코트 그래픽으로 구성) */}
+      <div
+        onClick={() => setSlide((s) => (s + 1) % 3)}
+        className="relative h-44 w-full cursor-pointer overflow-hidden rounded-3xl border border-white/10 bg-ink shadow-lg"
+      >
+        <div
+          className="absolute inset-0 transition-all duration-500"
+          style={{
+            background: `radial-gradient(circle at 75% 25%, ${curAccent}38, transparent 60%), linear-gradient(160deg, #161A23 0%, #0E1015 100%)`,
+          }}
+        />
+        <CourtLinesSvg color={curAccent} opacity={0.28} className="absolute inset-0 h-full w-full" />
+        <div className="relative flex h-full flex-col justify-between p-4">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[10px] font-extrabold text-white/85 backdrop-blur">
+              <Icon name="MapPin" size={11} className="text-brand" /> {region || '공식 인증 코트'}
+            </span>
+            <span className="rounded-full border border-neon/45 bg-neon/15 px-2.5 py-0.5 text-[10px] font-extrabold text-neon">
+              공식 기록 구장
+            </span>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="font-bebas text-2xl tracking-wider text-white/90">GARBAGE TIME ARENA</div>
+              <div className="text-[11px] font-bold text-white/55">{address}</div>
+            </div>
+            <BallLogo size={36} />
+          </div>
+        </div>
+        {/* 하단 중앙 슬라이드 인디케이터 (━━ • •) */}
+        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={`h-1.5 rounded-full transition-all ${slide === i ? 'w-5 bg-white' : 'w-1.5 bg-white/35'}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 구장 하단 타이틀 + 네온 태그 + 시설 요약 (Image 1 하단 구조) */}
+      <div className="px-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-extrabold text-white">{court}</h3>
+          <span className="rounded-full border border-neon/45 bg-neon/20 px-2.5 py-0.5 text-[11px] font-extrabold text-neon">
+            실내코트
+          </span>
+          {matches.some((m) => isUnlimitedMatch(m)) && (
+            <span className="rounded-full border border-brand/45 bg-brand/15 px-2.5 py-0.5 text-[11px] font-extrabold text-brand">
+              오픈런 가능
+            </span>
+          )}
+        </div>
+        <div className="mt-1 text-xs font-semibold text-white/45">
+          5vs5 · 실내 · 주차 · 조끼 · 공식스탯 · {address}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-bold text-white/65">{dateLabel}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => openNaverMap(address || court)}
+              className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/45 bg-[#03C75A]/15 px-2 py-1 text-[11px] font-extrabold text-[#03C75A]">
+              <Icon name="Navigation" size={10} /> 네이버 지도
+            </button>
+            <button type="button" onClick={() => openKakaoMap(address || court)}
+              className="inline-flex items-center gap-1 rounded-lg border border-[#FEE500]/50 bg-[#FEE500]/20 px-2 py-1 text-[11px] font-extrabold text-yellow-300">
+              <Icon name="Map" size={10} /> 카카오맵
+            </button>
+            <button type="button" onClick={() => copyAddress(address, toast)}
+              className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-white/70">
+              <Icon name="Copy" size={10} /> 주소 복사
+            </button>
+          </div>
+        </div>
+
+        {/* 해당 구장의 오픈 매치 빠른 타임슬롯 */}
+        {matches.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {matches.map((m) => {
+              const unlim = isUnlimitedMatch(m);
+              const left = unlim ? 999 : m.maxPlayers - m.participants.length;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onSelectMatch && onSelectMatch(m)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-panel px-3 py-1.5 text-xs font-extrabold transition hover:border-brand"
+                >
+                  <span className="font-bebas text-base text-brand">{fmtTime(m.datetime)}</span>
+                  <span className="text-white/75">{m.format.split(' ')[0]}</span>
+                  <span className={unlim || left > 2 ? 'text-neon' : 'text-brand'}>
+                    {unlim ? '오픈런' : left > 0 ? `${left}자리` : '마감'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 소셜 매치 리스트 아이템 (Image 4의 좌측 정사각 썸네일 + 중앙 시간/구장/서브정보 + 우측 하트 & 빠른 액션 구조)
 function MatchCard({ m, compact = false }) {
   const { state, dispatch, toast } = useStore();
   const [detailOpen, setDetailOpen] = useState(false);
+  const [liked, setLiked] = useState(false);
   const addr = getCourtAddress(m, state);
   const unlimited = isUnlimitedMatch(m);
   const isMgr = isManagerMatch(m);
   const joined = m.participants.includes(state.meId);
   const st = matchStatus(m);
-  const hasBotSlot = (m.participants || []).some((id) => _isBotId(id, state.users));
   const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
-  const canJoinSlot = unlimited || left > 0 || hasBotSlot;
-  const pct = unlimited ? 100 : Math.min(100, (m.participants.length / Math.max(1, m.maxPlayers)) * 100);
   const d = new Date(m.datetime);
   const dow = d.getDay();
   const dateBadgeStr = `${pad2(d.getMonth() + 1)}.${pad2(d.getDate())} (${DOW[dow]})`;
-  const dowBadgeCls = dow === 0
-    ? 'border-red-500/40 bg-red-500/15 text-red-400'
-    : dow === 6
-      ? 'border-sky-500/40 bg-sky-500/15 text-sky-400'
-      : 'border-brand/40 bg-brand/15 text-brand';
   const startTimeStr = fmtTime(m.datetime);
   const endTimeStr = fmtTime(m.datetime + 120 * 60000);
-  const fmtInfo = FORMATS[m.format] || FORMATS['5vs5 풀코트'];
 
-  const apply = () => {
+  const apply = (e) => {
+    e && e.stopPropagation();
     dispatch({ type: 'APPLY', matchId: m.id });
     vibrate();
-    toast(m.status === 'live' ? '진행 중인 경기에 즉시 합류했습니다! 매니저 스탯 패드에 내 이름이 표시됩니다 🏀' : '참가 신청 완료! 매니저 콘솔에 내 닉네임이 즉시 반영됩니다 🏀', 'success');
+    toast('참가 신청 완료! 경기 당일 매니저가 팀을 배정합니다 🏀', 'success');
   };
-  const cancel = () => { dispatch({ type: 'CANCEL', matchId: m.id }); toast('참가 신청이 취소되었습니다'); };
-
-  let action;
-  if (m.status === 'live') {
-    action = joined
-      ? <Btn variant="ghost" disabled className="w-full"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> 경기 진행 중 · 내 스탯 실시간 기록 중</Btn>
-      : canJoinSlot
-        ? <Btn className="w-full" onClick={apply}><Icon name="Zap" size={16} /> 진행 중인 경기 즉시 합류하기 · {fmtWon(m.fee)}</Btn>
-        : <Btn variant="ghost" disabled className="w-full"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> 경기 진행 중 · 매니저 기록 중</Btn>;
-  }
-  else if (m.status === 'cancelled') action = <Btn variant="ghost" disabled className="w-full"><Icon name="Ban" size={15} /> 매니저에 의해 취소된 매치</Btn>;
-  else if (m.status === 'closed') action = <Btn variant="ghost" disabled className="w-full">{joined ? '✓ 참가 확정 · 팀 배정 대기 중' : '신청 마감 · 팀 배정 대기 중'}</Btn>;
-  else if (m.status === 'finished') action = <Btn variant="ghost" disabled className="w-full">경기 종료 · 공식 기록 반영 완료</Btn>;
-  else if (joined) action = <Btn variant="ghost" className="w-full" onClick={cancel}><Icon name="X" size={15} /> 신청 취소</Btn>;
-  else if (!canJoinSlot) action = <Btn variant="ghost" disabled className="w-full">모집 마감</Btn>;
-  else action = <Btn className="w-full" onClick={apply}><Icon name="UserPlus" size={16} /> 참가 신청 · {fmtWon(m.fee)}</Btn>;
+  const cancel = (e) => {
+    e && e.stopPropagation();
+    dispatch({ type: 'CANCEL', matchId: m.id });
+    toast('참가 신청이 취소되었습니다');
+  };
 
   return (
-    <Card className={`relative overflow-hidden p-4 transition ${joined ? '!border-neon/45 shadow-[0_0_32px_-12px_rgba(0,255,102,.5)]' : isMgr ? '!border-brand/45 shadow-[0_0_26px_-12px_rgba(255,85,0,.45)]' : 'hover:border-white/15'}`}>
-      <CourtLinesSvg color={joined ? '#00FF66' : '#FF5500'} opacity={0.04} className="absolute inset-0 h-full w-full" />
-      {joined && m.status !== 'finished' && m.status !== 'cancelled' && (
-        <div className="absolute right-0 top-0 z-10 rounded-bl-xl bg-neon px-2.5 py-1 text-[10px] font-black text-black">✓ 참가 확정</div>
-      )}
+    <Card
+      className={`relative overflow-hidden p-3.5 transition ${
+        joined
+          ? '!border-neon/50 shadow-[0_0_28px_-12px_rgba(0,255,102,.45)]'
+          : isMgr
+            ? '!border-brand/45 shadow-[0_0_24px_-12px_rgba(255,85,0,.4)]'
+            : 'hover:border-white/15'
+      }`}
+    >
+      {/* 메인 수평 행 (Image 4 구조: 좌측 정사각 코트 썸네일 + 중앙 시간/구장명/포맷·잔여석 + 우측 관심 하트 & 카운트) */}
+      <div
+        onClick={() => setDetailOpen(true)}
+        className="flex cursor-pointer items-center gap-3.5"
+      >
+        <CourtThumbGraphic
+          format={m.format}
+          unlimited={unlimited}
+          joined={joined}
+          isMgr={isMgr}
+          size={84}
+        />
 
-      {/* 상단 핵심 영역: 좌측 대형 타임 박스 + 우측 하이 콘트라스트 정보 영역 */}
-      <div className="relative flex items-stretch gap-3.5">
-        {/* 1. 대형 타임 박스 (좌측): 묵직한 다크 패널 위에 날짜 뱃지 + 시작 시간 초대형 고대비 폰트 + 120분 경기/오픈런 뱃지 */}
-        <button
-          type="button"
-          onClick={() => setDetailOpen(true)}
-          className="flex w-[104px] shrink-0 flex-col items-center justify-between rounded-2xl border border-white/10 bg-ink px-2 py-2.5 text-center shadow-inner transition hover:border-brand/50 active:scale-[.98]"
-        >
-          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold leading-none ${dowBadgeCls}`}>
-            {dateBadgeStr}
-          </span>
-          <div className="my-1 font-bebas text-[34px] font-black leading-none tracking-wider text-white">
-            {startTimeStr}
+        {/* 중앙 정보 영역: 1행 시작시간 + 날짜/뱃지, 2행 체육관명, 3행 포맷 · 주차 · 잔여 자리 */}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-bebas text-2xl font-black leading-none tracking-wide text-white">
+              {startTimeStr}
+            </span>
+            <span className="text-[11px] font-bold text-white/50">
+              ~{endTimeStr} · {dateBadgeStr}
+            </span>
+            <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold ${st.cls}`}>
+              {st.label}
+            </span>
+            {isMgr && (
+              <span className="rounded-md border border-brand/50 bg-brand/20 px-1.5 py-0.5 text-[10px] font-black text-brand">
+                NEW
+              </span>
+            )}
           </div>
-          <div className="w-full space-y-1 leading-tight">
-            <div className="text-[10px] font-bold text-white/55">~{endTimeStr}</div>
+
+          <div className="mt-1 truncate text-[15px] font-extrabold text-white">
+            {m.court}
+          </div>
+
+          <div className="mt-0.5 truncate text-xs font-semibold text-white/55">
+            <span className="font-extrabold text-white/80">{m.format.split(' ')[0]}</span>
+            <span className="mx-1.5 text-white/25">·</span>
+            <span>{m.recTier}</span>
+            <span className="mx-1.5 text-white/25">·</span>
             {unlimited ? (
-              <span className="inline-block rounded-md border border-neon/45 bg-neon/15 px-1.5 py-0.5 text-[9px] font-extrabold text-neon">
-                ∞ 오픈런
+              <span className="font-extrabold text-neon">오픈런 ({m.participants.length}명 참가)</span>
+            ) : left > 0 ? (
+              <span className={`font-extrabold ${left <= 3 ? 'text-brand' : 'text-neon'}`}>
+                {left <= 3 ? `🔥 ${left}자리 남음` : `${left}자리 남음`} ({m.participants.length}/{m.maxPlayers}명)
               </span>
             ) : (
-              <span className="inline-block rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-extrabold text-white/75">
-                120분 경기
-              </span>
+              <span className="text-white/40">모집 마감</span>
             )}
           </div>
-        </button>
-
-        {/* 2. 우측 정보 & 상태 영역 */}
-        <div className="min-w-0 flex-1">
-          {/* 1행 (태그 라인): 매치 상태 뱃지 · 포맷 뱃지 · 권장 티어 */}
-          <div className="mb-1.5 flex flex-wrap items-center gap-1 pr-14">
-            <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold ${st.cls}`}>{st.label}</span>
-            {m.status === 'open' && !unlimited && left > 0 && (
-              <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-extrabold ${left <= 3 ? 'border-brand/50 bg-brand/15 text-brand' : 'border-neon/40 bg-neon/10 text-neon'}`}>
-                {left <= 3 ? `🔥 ${left}자리 남음!` : `${left}자리 남음!`}
-              </span>
-            )}
-            {isMgr && <span className="rounded-md border border-brand/50 bg-brand/20 px-1.5 py-0.5 text-[10px] font-black text-brand">✨ NEW 신규 개설</span>}
-            <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold text-white/80">{m.format}</span>
-            <span className="rounded-md border border-[#22D3EE]/35 bg-[#22D3EE]/10 px-2 py-0.5 text-[10px] font-extrabold text-[#22D3EE]">{m.recTier}</span>
+          <div className="mt-0.5 truncate text-[11px] text-white/40">
+            {m.title} · {addr}
           </div>
+        </div>
 
-          {/* 2행: 체육관 이름(굵게) + 매치 타이틀 + 도로명 상세 주소 */}
+        {/* 우측 하트(관심/참가 인원) 영역 (Image 4 우측 하트 + 숫자 배치) */}
+        <div className="flex shrink-0 flex-col items-center justify-center gap-1 pl-1">
           <button
             type="button"
-            onClick={() => setDetailOpen(true)}
-            className="flex w-full items-center gap-1.5 text-left text-base font-extrabold leading-snug text-white transition hover:text-brand"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLiked((v) => !v);
+              vibrate(6);
+            }}
+            aria-label="관심 매치"
+            className={`flex h-9 w-9 items-center justify-center rounded-full border transition active:scale-90 ${
+              liked || joined
+                ? 'border-brand/50 bg-brand/15 text-brand'
+                : 'border-white/10 bg-white/5 text-white/40 hover:text-white/75'
+            }`}
           >
-            <Icon name="MapPin" size={15} className="shrink-0 text-brand" />
-            <span className="truncate">{m.court}</span>
+            <Icon name="Heart" size={17} fill={liked || joined ? '#FF5500' : 'none'} />
           </button>
-          <button
-            type="button"
-            onClick={() => setDetailOpen(true)}
-            className="mt-0.5 block w-full truncate text-left text-xs font-bold text-white/80 hover:text-brand"
-          >
-            {m.title}
-          </button>
-          <div className="mt-0.5 truncate text-[11px] font-medium text-white/55">{addr}</div>
+          <span className="text-[11px] font-extrabold text-white/45">
+            {m.participants.length + (liked ? 1 : 0)}
+          </span>
         </div>
       </div>
 
-      {/* [네이버 지도], [카카오맵], [주소 복사] 깔끔한 플랫 미니 버튼 */}
-      <div className="relative mt-2.5 flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => openNaverMap(addr || m.court)}
-          className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/45 bg-[#03C75A]/15 px-2.5 py-1 text-[11px] font-extrabold text-[#03C75A] transition hover:bg-[#03C75A]/25 active:scale-95">
-          <Icon name="Navigation" size={11} /> 네이버 지도
-        </button>
-        <button type="button" onClick={() => openKakaoMap(addr || m.court)}
-          className="inline-flex items-center gap-1 rounded-lg border border-[#FEE500]/50 bg-[#FEE500]/20 px-2.5 py-1 text-[11px] font-extrabold text-yellow-300 transition hover:bg-[#FEE500]/30 active:scale-95">
-          <Icon name="Map" size={11} /> 카카오맵
-        </button>
-        <button type="button" onClick={() => copyAddress(addr, toast)}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/75 transition hover:border-brand hover:text-brand active:scale-95">
-          <Icon name="Copy" size={11} /> 주소 복사
-        </button>
-        <button type="button" onClick={() => setDetailOpen(true)}
-          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/60 transition hover:text-white active:scale-95">
-          상세보기 <Icon name="ChevronRight" size={11} />
-        </button>
-      </div>
-      <MatchDetailModal match={m} open={detailOpen} onClose={() => setDetailOpen(false)} />
-
-      {!compact && (
-        <div className="relative mt-3 grid grid-cols-3 gap-2">
-          {[
-            ['Users', '매치 포맷', `${m.format}`, unlimited ? '오픈런 · 인원 무제한' : `교체 포함 최대 ${m.maxPlayers}명`],
-            ['Award', '권장 티어', m.recTier, `${fmtInfo.onCourt}인 출전`],
-            ['BadgeCheck', '담당 매니저', m.manager.replace(' 매니저', ''), '공식 기록원'],
-          ].map(([ic, k, v, s]) => (
-            <div key={k} className="rounded-xl border border-white/[.04] bg-ink/70 px-2.5 py-2">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-white/35"><Icon name={ic} size={10} />{k}</div>
-              <div className="mt-0.5 truncate text-[12px] font-bold">{v}</div>
-              <div className="truncate text-[10px] text-white/35">{s}</div>
-            </div>
-          ))}
+      {/* 하단 빠른 길찾기 & 원클릭 참가 신청 바 */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-1.5 border-t border-white/[.06] pt-2.5">
+        <div className="flex flex-wrap items-center gap-1">
+          <button type="button" onClick={() => openNaverMap(addr || m.court)}
+            className="inline-flex items-center gap-1 rounded-lg border border-[#03C75A]/40 bg-[#03C75A]/15 px-2 py-1 text-[10px] font-extrabold text-[#03C75A] transition hover:bg-[#03C75A]/25 active:scale-95">
+            <Icon name="Navigation" size={10} /> 네이버 지도
+          </button>
+          <button type="button" onClick={() => openKakaoMap(addr || m.court)}
+            className="inline-flex items-center gap-1 rounded-lg border border-[#FEE500]/45 bg-[#FEE500]/15 px-2 py-1 text-[10px] font-extrabold text-yellow-300 transition hover:bg-[#FEE500]/25 active:scale-95">
+            <Icon name="Map" size={10} /> 카카오맵
+          </button>
+          <button type="button" onClick={() => copyAddress(addr, toast)}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/70 transition hover:border-brand hover:text-brand active:scale-95">
+            <Icon name="Copy" size={10} /> 주소 복사
+          </button>
         </div>
-      )}
 
-      {/* 3행 (모집 현황 프로그레스 바 / 무제한 오픈런 네온 뱃지) */}
-      <div className="relative mt-3">
-        {unlimited ? (
-          <div className="flex items-center justify-between rounded-xl border border-neon/45 bg-neon/10 px-3 py-2.5 shadow-[0_0_20px_-10px_rgba(0,255,102,0.4)]">
-            <span className="flex items-center gap-1.5 text-xs font-extrabold text-neon">
-              <Icon name="Sparkles" size={14} /> 참가 {m.participants.length}명 · 인원 제한 없음 (오픈런)
+        <div className="flex items-center gap-1.5">
+          {m.status === 'live' ? (
+            <span className="inline-flex items-center gap-1 rounded-xl border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-xs font-extrabold text-red-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> LIVE 기록 중
             </span>
-            <div className="flex -space-x-2">
-              {m.participants.slice(0, 6).map((id) => <div key={id} className="rounded-full ring-2 ring-panel"><Avatar user={state.users[id]} size={22} /></div>)}
-              {m.participants.length > 6 && <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-panel2 text-[9px] font-bold ring-2 ring-panel">+{m.participants.length - 6}</div>}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-white/[.06] bg-ink/70 px-3 py-2.5">
-            <div className="mb-1.5 flex items-center justify-between text-xs">
-              <span className="font-extrabold">
-                <span className="text-white/65">참가 </span>
-                <span className={left <= 3 && m.status === 'open' ? 'text-brand' : 'text-white'}>{m.participants.length}</span>
-                <span className="text-white/45"> / {m.maxPlayers}명</span>
-                {m.status === 'open' && left > 0 && (
-                  <span className={`ml-1.5 font-extrabold ${left <= 3 ? 'text-brand' : 'text-neon'}`}>
-                    ({left <= 3 ? `🔥 ${left}자리 남음!` : `${left}자리 남음!`})
-                  </span>
-                )}
-                {m.status === 'open' && left <= 0 && (
-                  <span className="ml-1.5 font-bold text-white/40">(모집 마감)</span>
-                )}
-              </span>
-              <div className="flex -space-x-2">
-                {m.participants.slice(0, 6).map((id) => <div key={id} className="rounded-full ring-2 ring-panel"><Avatar user={state.users[id]} size={22} /></div>)}
-                {m.participants.length > 6 && <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-panel2 text-[9px] font-bold ring-2 ring-panel">+{m.participants.length - 6}</div>}
-              </div>
-            </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-white/10 p-[1px]">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${left <= 3 ? 'bg-gradient-to-r from-brand to-amber-400 shadow-[0_0_10px_#FF5500]' : 'bg-gradient-to-r from-neon to-[#22D3EE] shadow-[0_0_10px_#00FF66]'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          </div>
-        )}
+          ) : m.status === 'cancelled' ? (
+            <span className="rounded-xl bg-white/5 px-3 py-1.5 text-xs font-bold text-white/40">취소됨</span>
+          ) : m.status === 'closed' ? (
+            <span className="rounded-xl bg-white/5 px-3 py-1.5 text-xs font-bold text-white/55">
+              {joined ? '✓ 참가 확정' : '신청 마감'}
+            </span>
+          ) : m.status === 'finished' ? (
+            <span className="rounded-xl bg-white/5 px-3 py-1.5 text-xs font-bold text-white/45">경기 종료</span>
+          ) : joined ? (
+            <button
+              type="button"
+              onClick={cancel}
+              className="inline-flex items-center gap-1 rounded-xl border border-neon/50 bg-neon/15 px-3 py-1.5 text-xs font-extrabold text-neon transition hover:bg-neon/25 active:scale-95"
+            >
+              <Icon name="Check" size={13} /> 신청 취소
+            </button>
+          ) : !unlimited && left <= 0 ? (
+            <span className="rounded-xl bg-white/5 px-3 py-1.5 text-xs font-bold text-white/40">모집 마감</span>
+          ) : (
+            <button
+              type="button"
+              onClick={apply}
+              className="inline-flex items-center gap-1 rounded-xl bg-brand px-3.5 py-1.5 text-xs font-extrabold text-black glow-orange transition hover:brightness-110 active:scale-95"
+            >
+              <Icon name="UserPlus" size={13} /> 참가 신청 · {fmtWon(m.fee)}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="relative mt-3">{action}</div>
+
+      <MatchDetailModal match={m} open={detailOpen} onClose={() => setDetailOpen(false)} />
     </Card>
   );
 }
@@ -3110,174 +2923,633 @@ function MatchCard({ m, compact = false }) {
 function LobbyPage() {
   const { state, setTab } = useStore();
   const me = state.users[state.meId];
-  const [filter, setFilter] = useState('all');
-  const filters = [['all', '전체'], ['open', '모집중'], ['hot', '마감 임박'], ['region', '내 지역']];
-  const list = state.matches
-    .filter((m) => m.status !== 'finished' && m.status !== 'cancelled')
-    .filter((m) => {
-      const unlimited = isUnlimitedMatch(m);
-      const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
-      if (filter === 'open') return m.status === 'open' && (unlimited || left > 0);
-      if (filter === 'hot') return m.status === 'open' && !unlimited && left > 0 && left <= 2;
-      if (filter === 'region') return m.region === me.city;
-      return true;
-    })
-    .sort((a, b) => {
-      const ma = isManagerMatch(a) ? 1 : 0;
-      const mb = isManagerMatch(b) ? 1 : 0;
-      if (ma !== mb) return mb - ma;
-      if (ma && mb) return (b.createdAt || 0) - (a.createdAt || 0);
-      return a.datetime - b.datetime;
-    });
-  const totalActiveCount = state.matches.filter((m) => m.status !== 'finished' && m.status !== 'cancelled').length;
+  // 상단 서브 탭 (Image 1 & 4: 소셜 매치 | 오픈런 | 팀 | 구장 예약)
+  const [subTab, setSubTab] = useState('social'); // 'social' | 'openrun' | 'court'
+  const [catFilter, setCatFilter] = useState('all'); // 'all' | '5vs5' | 'starter' | 'openrun'
+  const [selectedDate, setSelectedDate] = useState('all'); // 'all' or 'YYYY-MM-DD'
+  const [regionFilter, setRegionFilter] = useState('all'); // 'all' | 'my' | city
+  const [hideClosed, setHideClosed] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [bannerIdx, setBannerIdx] = useState(0);
+  const [promoToastOpen, setPromoToastOpen] = useState(true);
+  const [selectedMatchForModal, setSelectedMatchForModal] = useState(null);
+
   const t = getTier(me.rating);
   const nt = getNextTier(me.rating);
-  const tierProgress = nt ? Math.max(5, Math.min(100, ((me.rating - t.min) / (nt.min - t.min)) * 100)) : 100;
-  const latestGame = me.games && me.games[0];
   const posObj = POSITIONS[me.position] || POSITIONS.G;
+  const latestGame = me.games && me.games[0];
+
+  // 7일 날짜 스트립 생성 (오늘 기준 7일 + 매치가 있는 날짜 포함)
+  const dateDays = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    const pushDate = (dt) => {
+      const d = new Date(dt);
+      d.setHours(0, 0, 0, 0);
+      const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const diff = Math.round((d.getTime() - base.getTime()) / DAY);
+      const dow = d.getDay();
+      const label = diff === 0 ? '오늘' : DOW[dow];
+      out.push({ key, dateNum: d.getDate(), dow, label, isToday: diff === 0, ts: d.getTime() });
+    };
+    for (let i = 0; i < 7; i++) pushDate(base.getTime() + i * DAY);
+    state.matches
+      .filter((m) => m.status !== 'finished' && m.status !== 'cancelled')
+      .forEach((m) => pushDate(m.datetime));
+    return out.sort((a, b) => a.ts - b.ts).slice(0, 8);
+  }, [state.matches]);
+
+  const activeMatches = useMemo(() => {
+    return state.matches
+      .filter((m) => m.status !== 'finished' && m.status !== 'cancelled')
+      .filter((m) => {
+        const unlimited = isUnlimitedMatch(m);
+        const left = unlimited ? 999 : m.maxPlayers - m.participants.length;
+        if (subTab === 'openrun' && !unlimited) return false;
+        if (catFilter === '5vs5' && !String(m.format).includes('5vs5')) return false;
+        if (catFilter === 'starter' && !String(m.recTier).includes('루키') && !String(m.recTier).includes('비기너') && !String(m.recTier).includes('전체')) return false;
+        if (catFilter === 'openrun' && !unlimited) return false;
+        if (hideClosed && (m.status !== 'open' || (!unlimited && left <= 0))) return false;
+        if (regionFilter === 'my' && m.region !== me.city) return false;
+        if (regionFilter !== 'all' && regionFilter !== 'my' && m.region !== regionFilter) return false;
+        if (selectedDate !== 'all') {
+          const d = new Date(m.datetime);
+          const k = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+          if (k !== selectedDate) return false;
+        }
+        if (searchQ.trim()) {
+          const q = searchQ.trim().toLowerCase();
+          const hay = `${m.title} ${m.court} ${getCourtAddress(m, state)} ${m.region}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const ma = isManagerMatch(a) ? 1 : 0;
+        const mb = isManagerMatch(b) ? 1 : 0;
+        if (ma !== mb) return mb - ma;
+        if (ma && mb) return (b.createdAt || 0) - (a.createdAt || 0);
+        return a.datetime - b.datetime;
+      });
+  }, [state.matches, subTab, catFilter, hideClosed, regionFilter, selectedDate, searchQ, me.city]);
+
+  const totalActiveCount = state.matches.filter((m) => m.status !== 'finished' && m.status !== 'cancelled').length;
+
+  // 구장 예약 탭(Image 1)용 구장별 그룹화
+  const courtGroups = useMemo(() => {
+    const map = new Map();
+    state.matches
+      .filter((m) => m.status !== 'finished' && m.status !== 'cancelled')
+      .forEach((m) => {
+        const addr = getCourtAddress(m, state);
+        if (!map.has(m.court)) {
+          map.set(m.court, { court: m.court, address: addr, region: m.region, matches: [] });
+        }
+        map.get(m.court).matches.push(m);
+      });
+    (state.customCourts || []).forEach((c) => {
+      if (c && c.name && !map.has(c.name)) {
+        map.set(c.name, { court: c.name, address: c.address || c.name, region: c.region || me.city, matches: [] });
+      }
+    });
+    return Array.from(map.values());
+  }, [state.matches, state.customCourts, me.city]);
+
+  const cycleRegion = () => {
+    const order = ['all', 'my', '세종특별자치시', '대전광역시', '서울특별시'];
+    const idx = order.indexOf(regionFilter);
+    setRegionFilter(order[(idx + 1) % order.length]);
+    vibrate(6);
+  };
+  const regionLabel =
+    regionFilter === 'all'
+      ? '대전/세종 · 전체'
+      : regionFilter === 'my'
+        ? `내 지역 (${me.city.replace('특별자치시', '').replace('광역시', '').replace('특별시', '')})`
+        : regionFilter.replace('특별자치시', '').replace('광역시', '').replace('특별시', '');
 
   return (
-    <div className="space-y-4">
-      {/* A. 매칭 로비 상단: 마이 라이브 티어 위젯 */}
-      <button
-        type="button"
-        onClick={() => { setTab('my'); vibrate(8); }}
-        className="group relative block w-full overflow-hidden rounded-2xl border-2 bg-panel p-4 text-left transition hover:brightness-105 active:scale-[.99]"
+    <div className="space-y-3.5 pb-10">
+      {/* 숨김 검색 토글 트리거 (상단 헤더 돋보기 아이콘과 연결) */}
+      <button id="gt-lobby-search-toggle" type="button" className="hidden" onClick={() => setSearchOpen((v) => !v)} />
+
+      {/* 1. 상단 대분류 텍스트 탭 (Image 1 & 4: 소셜 매치 | 게스트(오픈런) | 팀(랭킹) | 구장 예약) */}
+      <div className="flex items-center gap-5 border-b border-white/[.06] pb-2.5 pt-1">
+        {[
+          ['social', '소셜 매치'],
+          ['openrun', '오픈런'],
+          ['team', '팀 · 랭킹'],
+          ['court', '구장 예약'],
+        ].map(([id, label]) => {
+          const on = subTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                vibrate(6);
+                if (id === 'team') setTab('ranking');
+                else setSubTab(id);
+              }}
+              className={`relative text-lg tracking-tight transition ${
+                on ? 'font-black text-white' : 'font-extrabold text-white/30 hover:text-white/65'
+              }`}
+            >
+              {label}
+              {on && <span className="absolute -bottom-2.5 left-0 right-0 h-[3px] rounded-full bg-brand" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 검색창 (돋보기 클릭 시 오픈) */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 rounded-2xl border border-brand/40 bg-panel px-3.5 py-2.5">
+          <Icon name="Search" size={16} className="text-brand" />
+          <input
+            type="text"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="체육관 이름, 지역, 매치 제목 검색..."
+            className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/35"
+          />
+          {searchQ && (
+            <button type="button" onClick={() => setSearchQ('')} className="text-xs font-bold text-white/45">
+              초기화
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. 상단 퀵 카테고리 알약 버튼 행 (Image 4: ⚽ 축구 | 🌱 스타터 | ♀ 여자 | AI 리포트 구조) */}
+      {subTab !== 'court' && (
+        <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4">
+          {[
+            ['5vs5', '🏀', '5vs5 풀코트', '#FF5500'],
+            ['starter', '🌱', '스타터 · 루키', '#00FF66'],
+            ['openrun', '♾️', '오픈런 무제한', '#22D3EE'],
+            ['report', '📊', 'AI 리포트', t.color],
+          ].map(([id, emoji, label, col]) => {
+            const on = catFilter === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  vibrate(6);
+                  if (id === 'report') setTab('my');
+                  else setCatFilter(on ? 'all' : id);
+                }}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-extrabold shadow-sm transition active:scale-95 ${
+                  on
+                    ? 'border-brand bg-brand/20 text-white shadow-[0_0_16px_-6px_#FF5500]'
+                    : 'border-white/10 bg-panel text-white/85 hover:border-white/25'
+                }`}
+              >
+                <span>{emoji}</span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. 히어로 배너 카드 (Image 1 & 4의 상단 와이드 라운드 배너 구조 + 우리 브랜드 컬러 & 마이 라이브 티어 연동) */}
+      <div
+        onClick={() => {
+          vibrate(8);
+          if (bannerIdx === 0) setTab('my');
+          else setBannerIdx(0);
+        }}
+        className="relative cursor-pointer overflow-hidden rounded-3xl border border-white/15 bg-panel p-5 shadow-lg transition hover:brightness-105"
         style={{
-          borderColor: `${t.color}66`,
-          boxShadow: `0 16px 40px -18px ${t.color}55`,
+          background:
+            bannerIdx === 0
+              ? `linear-gradient(125deg, #161922 0%, ${t.color}33 55%, rgba(255,85,0,0.28) 100%)`
+              : 'linear-gradient(125deg, rgba(255,85,0,0.32) 0%, #161A24 55%, rgba(0,255,102,0.22) 100%)',
         }}
       >
-        <div className="pointer-events-none absolute inset-0" style={{ background: `linear-gradient(125deg, ${t.color}28, rgba(34,211,238,0.06) 55%, transparent 85%)` }} />
-        <CourtLinesSvg color={t.color} opacity={0.1} className="absolute inset-0 h-full w-full" />
-        <div className="relative flex items-center gap-3.5">
-          {/* 좌측: 빛나는 육각형 티어 엠블럼 + 내 포지션 뱃지 (PG, C 등) */}
-          <div className="flex shrink-0 flex-col items-center gap-1.5">
-            <TierEmblem rating={me.rating} size={64} glow />
-            <span
-              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-bebas text-xs tracking-wider"
-              style={{ color: posObj.color, background: `${posObj.color}22`, border: `1px solid ${posObj.color}66` }}
-            >
-              {posObj.id} · #{getJerseyNum(me)}
-            </span>
-          </div>
-
-          {/* 중앙: 닉네임 + 현재 레이팅 1000 PT (대형 폰트) + 다음 티어 승급 프로그레스 게이지 바 */}
+        <CourtLinesSvg color={bannerIdx === 0 ? t.color : '#FF5500'} opacity={0.16} className="absolute inset-0 h-full w-full" />
+        <div className="relative flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-extrabold tracking-widest text-brand">MY LIVE TIER</span>
-              <TierChip rating={me.rating} />
-              <PosChip pos={me.position} />
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-neon/40 bg-neon/15 px-2.5 py-0.5 text-[10px] font-extrabold text-neon">
+              <span>MY LIVE TIER · {t.en}</span>
+              <span>·</span>
+              <span>{posObj.id} #{getJerseyNum(me)}</span>
             </div>
-            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-              <div className="truncate text-base font-extrabold text-white">{me.nickname}</div>
-              <div className="font-bebas text-4xl leading-none tracking-wide text-white">
-                {me.rating} <span className="text-base text-brand">PT</span>
-              </div>
-            </div>
-
-            {/* 다음 티어 승급 프로그레스 게이지 바 */}
-            <div className="mt-2">
-              <div className="mb-1 flex items-center justify-between text-[10px] font-extrabold">
-                <span style={{ color: t.color }}>{t.name} 티어</span>
-                <span className="text-white/65">
-                  {nt ? `${nt.name} 승급까지 ${nt.min - me.rating} PT` : '최고 티어 LEGEND'}
-                </span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-ink/90 p-[1px]">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${tierProgress}%`,
-                    background: `linear-gradient(90deg, ${t.color}, #FF5500, #00FF66)`,
-                    boxShadow: `0 0 10px ${t.color}`,
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* 우측/하단: 최근 경기 결과 칩 + 마이페이지 이동 안내 */}
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-              {latestGame ? (
-                <span
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-extrabold ${
-                    latestGame.delta >= 0
-                      ? 'border-neon/45 bg-neon/15 text-neon'
-                      : 'border-red-500/40 bg-red-500/15 text-red-400'
-                  }`}
-                >
-                  최근 경기 {latestGame.delta >= 0 ? '▲' : '▼'} {signed(latestGame.delta)} PT {latestGame.result === 'W' ? '승리' : latestGame.result === 'L' ? '패배' : '무승부'}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-lg border border-[#22D3EE]/35 bg-[#22D3EE]/10 px-2 py-0.5 text-[11px] font-extrabold text-[#22D3EE]">
-                  ⚡ 첫 공식 경기 준비중 · {me.city} {me.district}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-0.5 text-[11px] font-extrabold text-white/55 group-hover:text-brand">
-                선수 카드 보기 <Icon name="ChevronRight" size={13} />
-              </span>
-            </div>
+            {bannerIdx === 0 ? (
+              <>
+                <h2 className="mt-2 text-xl font-black leading-snug text-white">
+                  {me.nickname}님 · <span className="font-bebas text-2xl text-neon">{me.rating} PT</span>
+                </h2>
+                <p className="mt-1 text-xs font-bold text-white/75">
+                  {latestGame
+                    ? `최근 경기 ${latestGame.delta >= 0 ? '▲' : '▼'} ${signed(latestGame.delta)} PT ${latestGame.result === 'W' ? '승리' : '반영'} · ${nt ? `${nt.name} 승급까지 ${nt.min - me.rating} PT` : '최고 티어'}`
+                    : `존중하고 격려하며 함께 즐겨요 · ${nt ? `${nt.name} 승급까지 ${nt.min - me.rating} PT` : '공식 매치 시즌 OPEN'}`}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="mt-2 text-xl font-black leading-snug text-white">
+                  존중하고 격려하며<br />함께 즐겨요
+                </h2>
+                <p className="mt-1 text-xs font-bold text-white/75">
+                  모두 함께 즐기는 가비지타임 공식 소셜 매치 문화
+                </p>
+              </>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-center gap-1">
+            <TierEmblem rating={me.rating} size={64} glow />
+            <span className="text-[10px] font-extrabold text-white/60">선수 카드 &gt;</span>
           </div>
         </div>
-      </button>
+        {/* 배너 하단 슬라이드 도트 (━━ • •) */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setBannerIdx((i) => (i + 1) % 2);
+          }}
+          className="relative mt-3 flex items-center justify-center gap-1.5"
+        >
+          {[0, 1].map((i) => (
+            <span
+              key={i}
+              className={`h-1.5 rounded-full transition-all ${bannerIdx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/35'}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 4. 가로 날짜 선택 스트립 (Image 1 & 4: [📅] + [오늘 16] [화 17] [수 18] [목 19] [금 20] [토 21] [일 22]) */}
+      <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 py-0.5">
+        <button
+          type="button"
+          onClick={() => { setSelectedDate('all'); vibrate(6); }}
+          className={`flex h-16 w-12 shrink-0 flex-col items-center justify-center rounded-2xl border transition active:scale-95 ${
+            selectedDate === 'all'
+              ? 'border-neon/60 bg-ink text-neon shadow-[0_0_16px_-6px_rgba(0,255,102,0.5)]'
+              : 'border-white/10 bg-panel text-white/55 hover:text-white'
+          }`}
+          title="전체 날짜 보기"
+        >
+          <Icon name="Calendar" size={17} />
+          <span className="mt-1 text-[10px] font-extrabold">전체</span>
+        </button>
+
+        {dateDays.map((d) => {
+          const on = selectedDate === d.key;
+          const dayColor = on
+            ? 'text-neon'
+            : d.dow === 0
+              ? 'text-red-400'
+              : d.dow === 6
+                ? 'text-sky-400'
+                : 'text-white/45';
+          return (
+            <button
+              key={d.key}
+              type="button"
+              onClick={() => {
+                setSelectedDate(on ? 'all' : d.key);
+                vibrate(6);
+              }}
+              className={`flex h-16 w-[52px] shrink-0 flex-col items-center justify-center rounded-2xl border transition active:scale-95 ${
+                on
+                  ? 'border-neon/60 bg-ink text-white shadow-[0_0_18px_-6px_rgba(0,255,102,0.55)]'
+                  : 'border-white/[.07] bg-panel text-white/80 hover:border-white/20'
+              }`}
+            >
+              <span className={`text-[11px] font-extrabold ${dayColor}`}>{d.label}</span>
+              <span className="mt-0.5 font-bebas text-xl font-black leading-none">{d.dateNum}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 5. 필터 칩 바 + 우측 지도 버튼 (Image 1 & 4: [📍 대전/세종] [▽ 필터] [마감 가리기] ... [🗺️]) */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={cycleRegion}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neon/45 bg-neon/15 px-3 py-1.5 text-xs font-extrabold text-neon transition active:scale-95"
+          >
+            <Icon name="MapPin" size={12} />
+            <span>{regionLabel}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const order = ['all', '5vs5', 'starter', 'openrun'];
+              setCatFilter(order[(order.indexOf(catFilter) + 1) % order.length]);
+              vibrate(6);
+            }}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold transition active:scale-95 ${
+              catFilter !== 'all'
+                ? 'border-brand/50 bg-brand/15 text-brand'
+                : 'border-white/10 bg-panel text-white/70 hover:text-white'
+            }`}
+          >
+            <Icon name="SlidersHorizontal" size={12} />
+            <span>{catFilter === 'all' ? '필터' : catFilter === '5vs5' ? '5vs5' : catFilter === 'starter' ? '루키' : '오픈런'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setHideClosed((v) => !v); vibrate(6); }}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold transition active:scale-95 ${
+              hideClosed
+                ? 'border-neon/50 bg-neon/15 text-neon'
+                : 'border-white/10 bg-panel text-white/65 hover:text-white'
+            }`}
+          >
+            <span>마감 가리기</span>
+          </button>
+        </div>
+
+        {/* 우측 사각 지도/구장 전환 아이콘 버튼 (Image 4 우측 [🗺️]) */}
+        <button
+          type="button"
+          onClick={() => {
+            setSubTab((t) => (t === 'court' ? 'social' : 'court'));
+            vibrate(6);
+          }}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition active:scale-95 ${
+            subTab === 'court'
+              ? 'border-brand bg-brand/20 text-brand'
+              : 'border-white/10 bg-panel text-white/75 hover:border-white/25'
+          }`}
+          title="구장 예약 / 코트 보기 전환"
+          aria-label="구장 보기"
+        >
+          <Icon name="Map" size={16} />
+        </button>
+      </div>
 
       <DemoGuide />
 
-      <div>
-        <SectionTitle icon="Flame" title="오픈 소셜 매치" sub="모든 매치는 가비지타임 공식 매니저가 개설 · 운영 · 기록합니다" />
-        <div className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4">
-          {filters.map(([id, l]) => (
-            <button key={id} onClick={() => setFilter(id)}
-              className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold transition ${filter === id ? 'bg-white text-ink' : 'border border-white/10 bg-white/5 text-white/60 hover:text-white'}`}>{l}</button>
+      {/* 6. 메인 콘텐츠: 구장 예약 탭(Image 1) vs 소셜 매치 리스트(Image 4) */}
+      {subTab === 'court' ? (
+        <div className="divide-y divide-white/[.06] space-y-5">
+          {courtGroups.map((cg) => (
+            <CourtVenueCard
+              key={cg.court}
+              court={cg.court}
+              address={cg.address}
+              region={cg.region}
+              matches={cg.matches}
+              onSelectMatch={(m) => setSelectedMatchForModal(m)}
+            />
           ))}
         </div>
-        <div className="space-y-3">
-          {filter !== 'all' && totalActiveCount > list.length && (
-            <button type="button" onClick={() => setFilter('all')}
-              className="flex w-full items-center justify-between rounded-xl border border-brand/30 bg-brand/10 px-3.5 py-2.5 text-xs font-extrabold text-brand transition hover:bg-brand/15">
-              <span>다른 지역/조건의 오픈 매치 {totalActiveCount - list.length}개가 더 있습니다</span>
-              <span className="underline">전체 매치 보기 →</span>
-            </button>
+      ) : (
+        <div className="space-y-2.5">
+          {(selectedDate !== 'all' || regionFilter !== 'all' || catFilter !== 'all' || hideClosed) &&
+            totalActiveCount > activeMatches.length && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate('all');
+                  setRegionFilter('all');
+                  setCatFilter('all');
+                  setHideClosed(false);
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-brand/30 bg-brand/10 px-3.5 py-2.5 text-xs font-extrabold text-brand transition hover:bg-brand/15"
+              >
+                <span>다른 날짜/지역의 오픈 매치 {totalActiveCount - activeMatches.length}개가 더 있습니다</span>
+                <span className="underline">전체 매치 보기 →</span>
+              </button>
+            )}
+          {activeMatches.length === 0 && (
+            <Card className="py-12 text-center text-sm text-white/45">
+              선택한 조건에 맞는 매치가 없어요
+            </Card>
           )}
-          {list.length === 0 && <Card className="py-12 text-center text-sm text-white/40">조건에 맞는 매치가 없어요</Card>}
-          {list.map((m) => <MatchCard key={m.id} m={m} />)}
+          {activeMatches.map((m) => (
+            <MatchCard key={m.id} m={m} />
+          ))}
         </div>
-      </div>
+      )}
+
+      {/* 7. 하단 플로팅 프로모션 토스트 바 (Image 4 하단: 'NEW 매치 뛰고 모은 피스로 상품 받아요 ×') */}
+      {promoToastOpen && (
+        <div className="sticky bottom-20 z-20 mx-auto max-w-md">
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/15 bg-ink/95 px-4 py-3 text-xs font-extrabold text-white shadow-2xl backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setTab('my')}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            >
+              <span className="shrink-0 font-black text-neon">NEW</span>
+              <span className="truncate">매치 뛰고 누적 스탯으로 공식 티어·칭호 받아요</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPromoToastOpen(false)}
+              className="shrink-0 rounded-full p-1 text-white/45 hover:bg-white/10 hover:text-white"
+              aria-label="닫기"
+            >
+              <Icon name="X" size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <MatchDetailModal
+        match={selectedMatchForModal}
+        open={!!selectedMatchForModal}
+        onClose={() => setSelectedMatchForModal(null)}
+      />
     </div>
   );
 }
 
 /* =====================================================================
- * 11. USER: MY MATCHES / RANKING
+ * 11. USER: MY MATCHES (일정 탭 — Image 2 구조 완벽 반영) & RANKING
  * ===================================================================== */
 function MyMatchesPage() {
   const { state, setTab } = useStore();
   const me = state.users[state.meId];
-  const upcoming = state.matches.filter((m) => m.status !== 'finished' && m.participants.includes(state.meId)).sort((a, b) => a.datetime - b.datetime);
+  const [hideCancelled, setHideCancelled] = useState(true);
+  const [seasonFilter, setSeasonFilter] = useState('all');
   const [view, setView] = useState(null);
   const viewMatch = state.matches.find((m) => m.id === view);
+
+  const upcoming = state.matches
+    .filter((m) => m.status !== 'finished' && (!hideCancelled || m.status !== 'cancelled') && m.participants.includes(state.meId))
+    .sort((a, b) => a.datetime - b.datetime);
+
+  const g = Math.max(1, me.totals.gp);
+  const avgAbei = me.totals.gp ? (me.totals.abei / g).toFixed(1) : '10.0';
+  const streakWeeks = me.games.length > 0 ? Math.min(8, me.games.length) : 0;
+  const weekLabels = ['10월1주', '2주', '3주', '4주', '5주', '11월1주', '2주', '3주'];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* 1. 상단 필터 바 (Image 2: 좌측 [전체 ∨] [취소 가리기(네온 그린)] / 우측 [📅 캘린더]) */}
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSeasonFilter((s) => (s === 'all' ? '2026 가을' : 'all'));
+              vibrate(6);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-panel px-3.5 py-1.5 text-xs font-extrabold text-white/80 transition hover:border-white/25"
+          >
+            <span>{seasonFilter === 'all' ? '전체' : seasonFilter}</span>
+            <Icon name="ChevronDown" size={13} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setHideCancelled((v) => !v); vibrate(6); }}
+            className={`inline-flex items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-extrabold transition active:scale-95 ${
+              hideCancelled
+                ? 'border-neon/50 bg-neon/20 text-neon'
+                : 'border-white/10 bg-panel text-white/55'
+            }`}
+          >
+            <span>취소 가리기</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => { setTab('lobby'); vibrate(6); }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-panel px-3.5 py-1.5 text-xs font-extrabold text-white/75 transition hover:border-brand hover:text-brand"
+        >
+          <Icon name="Calendar" size={13} />
+          <span>캘린더</span>
+        </button>
+      </div>
+
+      {/* 2. 주간 연속 출전 스트릭 카드 (Image 2: '🔥 0주 연속 출전' + 8개 주차 원형 인디케이터, 마지막 주차 오렌지 링) */}
+      <Card className="p-4">
+        <div className="flex items-center gap-1.5 text-sm font-extrabold text-white/75">
+          <Icon name="Flame" size={16} className={streakWeeks > 0 ? 'text-brand' : 'text-white/30'} />
+          <span>{streakWeeks}주 연속 출전</span>
+        </div>
+        <div className="mt-3.5 grid grid-cols-8 gap-1.5 text-center">
+          {weekLabels.map((lbl, idx) => {
+            const isLast = idx === weekLabels.length - 1;
+            const active = idx >= weekLabels.length - streakWeeks && streakWeeks > 0;
+            return (
+              <div key={lbl} className="flex flex-col items-center gap-1.5">
+                <div
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                    active
+                      ? 'border-2 border-neon bg-neon/20 text-neon shadow-[0_0_12px_-4px_#00FF66]'
+                      : isLast
+                        ? 'border-2 border-brand bg-white/[.06] text-brand'
+                        : 'bg-white/[.07] text-white/25'
+                  }`}
+                >
+                  {active && <Icon name="Check" size={14} strokeWidth={3} />}
+                </div>
+                <span className={`text-[10px] font-extrabold ${isLast ? 'text-brand' : active ? 'text-neon' : 'text-white/40'}`}>
+                  {lbl}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* 3. 다가오는 일정 영역 (Image 2 중앙: '다가오는 일정이 없어요' + 네온 그린 [매치 신청하러 가기] 버튼) */}
       <div>
-        <SectionTitle icon="Ticket" title="예정된 매치" sub="신청한 매치는 경기 당일 매니저가 팀을 배정합니다" />
-        <div className="space-y-3">
-          {upcoming.length === 0 && (
-            <Card className="flex flex-col items-center gap-3 py-10 text-center">
-              <Icon name="CalendarX2" size={30} className="text-white/25" />
-              <div className="text-sm text-white/45">신청한 매치가 없어요</div>
-              <Btn variant="outline" onClick={() => setTab('lobby')} className="py-2">매치 둘러보기</Btn>
-            </Card>
+        {upcoming.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="text-sm font-bold text-white/45">다가오는 일정이 없어요</div>
+            <button
+              type="button"
+              onClick={() => { setTab('lobby'); vibrate(8); }}
+              className="mt-4 rounded-2xl bg-neon px-6 py-3.5 text-sm font-extrabold text-black glow-neon transition hover:brightness-110 active:scale-95"
+            >
+              매치 신청하러 가기
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <SectionTitle icon="Ticket" title="다가오는 일정" sub="경기 당일 매니저가 현장에서 팀을 배정합니다" />
+            {upcoming.map((m) => (
+              <MatchCard key={m.id} m={m} compact />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 4. 시즌별 공식 경기 기록 섹션 (Image 2 하단: '2026 가을 시즌 [진행 중] >' & '2026 여름 시즌 [7.2] >') */}
+      <div className="space-y-5 border-t border-white/[.06] pt-5">
+        {/* 2026 가을 시즌 */}
+        <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neon font-bebas text-base font-black text-black">
+                G
+              </div>
+              <h3 className="text-base font-black text-white">2026 가을 시즌</h3>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full border border-white/10 bg-panel px-2.5 py-0.5 text-[11px] font-extrabold text-white/65">
+                진행 중
+              </span>
+              <Icon name="ChevronRight" size={16} className="text-white/40" />
+            </div>
+          </div>
+
+          {me.games.length === 0 ? (
+            <p className="mt-2.5 text-xs font-semibold text-white/45">
+              아직 이번 시즌 기록이 없어요. 매치에 참가하면 기록이 쌓여요.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2.5">
+              {me.games.map((gm) => (
+                <GameRow key={gm.matchId} g={gm} onClick={() => setView(gm.matchId)} />
+              ))}
+            </div>
           )}
-          {upcoming.map((m) => <MatchCard key={m.id} m={m} compact />)}
+        </div>
+
+        {/* 2026 여름/프리 시즌 요약 (Image 2 하단: '2026 여름 시즌 [7.2] >' + 날짜 및 구장명) */}
+        <div
+          onClick={() => setTab('my')}
+          className="cursor-pointer rounded-2xl border border-white/[.06] bg-panel/60 p-4 transition hover:border-white/15"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neon font-bebas text-base font-black text-black">
+                G
+              </div>
+              <h3 className="text-base font-black text-white">2026 프리 시즌 · 누적 리포트</h3>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full border border-neon/45 bg-neon/20 px-2.5 py-0.5 font-bebas text-sm font-black text-neon">
+                {avgAbei}
+              </span>
+              <Icon name="ChevronRight" size={16} className="text-white/40" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-sm font-black text-white">
+              {me.totals.gp > 0
+                ? `${me.totals.gp}전 ${me.totals.wins}승 ${me.totals.losses}패 · 현재 ${me.rating} PT`
+                : `배치 레이팅 ${me.rating} PT · 첫 공식 매치 대기 중`}
+            </div>
+            <div className="mt-0.5 text-xs font-semibold text-white/55">
+              {me.city} {me.district} · {POSITIONS[me.position].name} (#{getJerseyNum(me)})
+            </div>
+          </div>
         </div>
       </div>
-      <div>
-        <SectionTitle icon="History" title="완료된 공식 경기" sub="매니저가 기록하고 알고리즘이 산출한 공식 결과" />
-        <div className="space-y-2">
-          {me.games.length === 0 && <Card className="py-8 text-center text-sm text-white/40">아직 완료된 경기가 없어요</Card>}
-          {me.games.map((g) => <GameRow key={g.matchId} g={g} onClick={() => setView(g.matchId)} />)}
-        </div>
-      </div>
+
       <Modal open={!!viewMatch} onClose={() => setView(null)} wide title="공식 경기 결과">
         {viewMatch && viewMatch.result && <ResultBody match={viewMatch} />}
       </Modal>
@@ -3364,10 +3636,10 @@ function RankingPage() {
 }
 
 /* =====================================================================
- * 12. USER: MY PAGE (디지털 스포츠 선수 카드 & 데이터 대시보드)
+ * 12. USER: MY PAGE (Image 3 구조: 대형 그라데이션 히어로 카드 + 3분할 다크 필 + 다크 배너 + 레이팅 요약 카드 + 시즌 데이터)
  * ===================================================================== */
 function MyPage() {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, setTab } = useStore();
   const me = state.users[state.meId];
   const t = getTier(me.rating);
   const nt = getNextTier(me.rating);
@@ -3379,11 +3651,15 @@ function MyPage() {
   const g = Math.max(1, me.totals.gp);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [bannerOpen, setBannerOpen] = useState(true);
   const manAge = calcAge(me.birthDate, me.age);
   const posObj = POSITIONS[me.position] || POSITIONS.G;
   const jerseyNum = getJerseyNum(me);
   const winRate = me.totals.gp ? Math.round((me.totals.wins / me.totals.gp) * 100) : 0;
   const avgAbei = me.totals.gp ? (me.totals.abei / g).toFixed(1) : '0.0';
+  const primaryStyleLabel = me.badges[0]
+    ? BADGES[me.badges[0]].label.split(' ').slice(1).join(' ')
+    : posObj.name;
 
   const platformAvg = useMemo(() => {
     const ps = Object.values(state.users).filter((u) => u.totals.gp > 0).map((u) => radarScores(u.totals));
@@ -3394,184 +3670,238 @@ function MyPage() {
   useEffect(() => { if (latest) dispatch({ type: 'SEEN', matchId: latest.matchId }); }, [latest && latest.matchId]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] font-extrabold tracking-[.25em] text-brand">PLAYER DATA CARD</div>
-          <h1 className="text-lg font-extrabold leading-tight">마이 선수 카드</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { setEditOpen(true); vibrate(8); }}
-            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-brand/40 bg-brand/10 px-3.5 text-xs font-extrabold text-brand transition hover:bg-brand/20 active:scale-95">
-            <Icon name="Edit3" size={14} /> 프로필 수정
-          </button>
-          <button onClick={() => { setSettingsOpen(true); vibrate(8); }} aria-label="설정"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:rotate-45 hover:text-brand active:scale-90">
-            <Icon name="Settings" size={19} />
-          </button>
-        </div>
-      </div>
+    <div className="space-y-3.5">
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ProfileEditModal open={editOpen} onClose={() => setEditOpen(false)} />
 
-      {reveal && (
-        <div className="pop-in relative overflow-hidden rounded-2xl border border-neon/40 bg-gradient-to-br from-neon/15 via-panel to-panel p-4 shadow-[0_0_40px_-12px_rgba(0,255,102,.6)]">
-          <div className="shine pointer-events-none absolute inset-0" />
-          <div className="relative flex items-start gap-3">
-            <div className="text-3xl">{tierUp ? '🚀' : latest.result === 'W' ? '🏆' : latest.result === 'L' ? '🛡️' : '🤝'}</div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-extrabold tracking-wider text-neon">NEW · 공식 기록 실시간 반영</div>
-              <div className="mt-0.5 font-extrabold">
-                {tierUp ? `티어 승급! ${getTier(latest.before).name} → ${getTier(latest.after).name}` : latest.result === 'W' ? '승리! 레이팅이 상승했어요' : latest.result === 'L' ? '패배했지만 개인 기여도로 하락폭을 방어했어요' : '무승부 경기'}
-              </div>
-              <div className="mt-1 text-xs text-white/55">{latest.title} · ABEi <b className="text-white">{latest.abei.toFixed(1)}</b> (팀 평균 {latest.teamAvg.toFixed(1)}) → 가중치 <b className="text-brand">×{latest.weight.toFixed(2)}</b></div>
-            </div>
-            <button onClick={() => dispatch({ type: 'CLEAR_REVEAL' })} className="rounded-full p-1 text-white/40 hover:bg-white/10"><Icon name="X" size={16} /></button>
-          </div>
-        </div>
-      )}
-
-      {/* 1. 상단 프로필 카드: 티어 고유 컬러 글로우 테두리 + 코트 라인 워터마크 + 등번호 저지 그래픽 */}
-      <Card
-        className="relative overflow-hidden border-2"
+      {/* 1. 상단 히어로 그라데이션 프로필 카드 (Image 3의 대형 정사각 그린 카드를 우리 티어/네온/오렌지 컬러와 코트 그래픽으로 구성) */}
+      <div
+        className="relative overflow-hidden rounded-[28px] border-2 p-5 shadow-2xl"
         style={{
-          borderColor: `${t.color}77`,
-          boxShadow: `0 18px 46px -16px ${t.color}45, inset 0 1px 0 0 ${t.color}33`,
+          borderColor: `${t.color}88`,
+          background: `linear-gradient(145deg, ${t.color}55 0%, rgba(0,255,102,0.28) 48%, rgba(255,85,0,0.28) 100%)`,
+          boxShadow: `0 20px 50px -18px ${t.color}66`,
         }}
       >
-        <div className="absolute inset-x-0 top-0 h-36" style={{ background: `linear-gradient(135deg, ${t.color}38, rgba(34,211,238,0.08) 55%, transparent 80%)` }} />
-        <CourtLinesSvg color={t.color} opacity={0.11} className="absolute inset-0 h-full w-full" />
-        {/* 대형 저지 배번 & 포지션 코드 배경 워터마크 */}
-        <div className="pointer-events-none select-none absolute -right-2 -top-2 font-bebas text-[104px] leading-none tracking-tighter opacity-[.09]" style={{ color: posObj.color }}>
+        <CourtLinesSvg color="#FFFFFF" opacity={0.12} className="absolute inset-0 h-full w-full" />
+        <div className="pointer-events-none select-none absolute -right-2 top-8 font-bebas text-[120px] leading-none opacity-[.08]">
           #{jerseyNum}
         </div>
 
-        <div className="relative p-5">
-          {/* 상단 헤더 바: 공식 라이선스 & 저지 배번 */}
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black tracking-widest" style={{ color: t.color, background: `${t.color}20`, border: `1px solid ${t.color}55` }}>
-                <Icon name="ShieldCheck" size={11} /> {t.en} TIER CARD
-              </span>
-              <span className="text-[10px] font-bold text-white/45">신뢰도 σ {me.sigma.toFixed(2)}</span>
-            </div>
-            <JerseyBadge user={me} size="lg" />
+        {/* 카드 상단 좌/우 아이콘 바 (Image 3: 좌상단 오각형 플레이스타일 엠블럼 / 우상단 프로필수정 & 톱니바퀴 설정 아이콘) */}
+        <div className="relative flex items-center justify-between">
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-neon/50 bg-ink/75 text-neon shadow-md backdrop-blur"
+            title={`PLAYER DATA CARD · ${primaryStyleLabel}`}
+          >
+            <Icon name="Hexagon" size={22} />
           </div>
-
-          {/* 좌측 육각형 티어 엠블럼 + 우측 선수 상세 스펙 */}
-          <div className="flex items-start gap-4">
-            <div className="flex flex-col items-center gap-1.5">
-              <div className={reveal && tierUp ? 'pop-in' : ''}><TierEmblem rating={me.rating} size={88} glow /></div>
-              <span className="rounded-md px-2 py-0.5 font-bebas text-xs tracking-wider" style={{ color: posObj.color, background: `${posObj.color}20`, border: `1px solid ${posObj.color}55` }}>
-                {posObj.id} · {posObj.group}
-              </span>
-            </div>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-extrabold">{me.nickname}</h2>
-                <PosChip pos={me.position} />
-              </div>
-              <div className="mt-1 text-xs font-semibold text-white/70">
-                {me.realName ? `${me.realName} · ` : ''}{me.gender === 'F' ? '여성' : '남성'} · 만 {manAge}세{me.birthDate ? ` (${me.birthDate})` : ''}
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-bold">
-                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/80">{me.height}cm</span>
-                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/80">{me.weight}kg</span>
-                <span className="rounded-lg border border-white/10 bg-ink/70 px-2 py-0.5 text-white/70">{me.city} {me.district}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-extrabold" style={{ color: t.color }}>● {t.name} ({t.en})</span>
-                {me.badges.length > 0 && (
-                  <span className="rounded-md border border-neon/40 bg-neon/10 px-2 py-0.5 text-[10px] font-extrabold text-neon">
-                    활성 칭호 {me.badges.length}개
-                  </span>
-                )}
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setEditOpen(true); vibrate(8); }}
+              title="프로필 수정"
+              aria-label="프로필 수정"
+              className="flex h-10 items-center gap-1.5 rounded-full border border-white/20 bg-ink/70 px-3 text-xs font-extrabold text-white backdrop-blur transition hover:border-brand hover:text-brand active:scale-95"
+            >
+              <Icon name="Edit3" size={14} />
+              <span>프로필 수정</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSettingsOpen(true); vibrate(8); }}
+              title="설정"
+              aria-label="설정"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-ink/70 text-white backdrop-blur transition hover:rotate-45 hover:text-brand active:scale-90"
+            >
+              <Icon name="Settings" size={19} />
+            </button>
           </div>
+        </div>
 
-          {/* 초대형 레이팅 보드 + 직전 경기 증감 */}
-          <div className="mt-4 flex items-end justify-between rounded-2xl border border-white/10 bg-ink/75 px-4 py-3">
-            <div>
-              <div className="text-[10px] font-extrabold tracking-[.22em] text-brand">OFFICIAL RATING</div>
-              <div className={`font-bebas text-6xl leading-none tracking-wide ${reveal ? 'text-glow-orange' : ''}`}>
-                {me.rating}<span className="ml-1.5 text-xl text-brand">PT</span>
-              </div>
+        {/* 카드 중앙 대형 원형 이니셜 아바타 + 닉네임 (Image 3: 중앙 대형 원형 '승' + 하단 '승헌') */}
+        <div className="relative my-5 flex flex-col items-center text-center">
+          <div className="relative">
+            <div
+              className="flex h-28 w-28 items-center justify-center rounded-full border-4 font-black shadow-2xl"
+              style={{
+                background: 'rgba(18, 18, 18, 0.88)',
+                borderColor: t.color,
+                color: '#FFFFFF',
+                fontSize: 44,
+                boxShadow: `0 0 32px -6px ${t.color}`,
+              }}
+            >
+              {me.nickname.slice(0, 1)}
             </div>
-            <div className="pb-1 text-right">
-              <div className="mb-1 text-[10px] font-bold text-white/45">최근 경기 변동</div>
-              <DeltaChip delta={me.lastDelta} size="lg" />
+            <div className="absolute -bottom-1 -right-2">
+              <JerseyBadge user={me} size="lg" />
             </div>
           </div>
 
-          {/* 다음 티어 승급 프로그레스 게이지 바 */}
-          <div className="mt-3.5">
-            <div className="mb-1.5 flex justify-between text-[11px] font-extrabold">
-              <span style={{ color: t.color }}>{t.name} ({t.min} PT)</span>
-              <span className="text-neon">{nt ? `다음 티어 [${nt.name}] 승급까지 ${nt.min - me.rating} PT 남음` : '★ 최고 티어 LEGEND 달성'}</span>
+          <div className="mt-3.5 text-[10px] font-extrabold tracking-[.25em] text-neon">
+            PLAYER DATA CARD · 마이 선수 카드
+          </div>
+          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">
+            {me.nickname}
+          </h1>
+          <div className="mt-1 text-xs font-bold text-white/80">
+            {me.realName ? `${me.realName} · ` : ''}{me.gender === 'F' ? '여성' : '남성'} · 만 {manAge}세 · {me.height}cm · {me.weight}kg · {me.city} {me.district}
+          </div>
+        </div>
+
+        {/* 카드 하단 3분할 다크 반투명 필 박스 (Image 3: [4 아마추어4] | [😀 5] | [⬡ 해결사]) */}
+        <div className="relative grid grid-cols-3 gap-2">
+          <div className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/15 bg-ink/80 px-2.5 py-3 text-center backdrop-blur">
+            <TierEmblem rating={me.rating} size={22} />
+            <span className="truncate text-xs font-extrabold text-white">{t.name}</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/15 bg-ink/80 px-2.5 py-3 text-center backdrop-blur">
+            <span className="text-sm">🏀</span>
+            <span className="font-bebas text-lg leading-none text-neon">{me.rating} PT</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/15 bg-ink/80 px-2.5 py-3 text-center backdrop-blur">
+            <Icon name="Hexagon" size={14} className="shrink-0 text-neon" />
+            <span className="truncate text-xs font-extrabold text-white">{primaryStyleLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. 다크 배너 스트립 (Image 3: '플랩 스토어가 열렸어요 / 지금까지 뛴 매치만큼 피스를 받아요 ×') */}
+      {(bannerOpen || reveal) && (
+        <div className="relative flex items-center gap-3 rounded-2xl border border-neon/40 bg-ink px-4 py-3.5 shadow-lg">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-neon bg-neon/20 text-neon">
+            {reveal ? (
+              <span className="text-lg">{tierUp ? '🚀' : latest.result === 'W' ? '🏆' : '🛡️'}</span>
+            ) : (
+              <Icon name="Hexagon" size={18} />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-extrabold text-neon">
+              {reveal
+                ? tierUp
+                  ? `티어 승급! ${getTier(latest.before).name} → ${getTier(latest.after).name}`
+                  : '공식 경기 기록이 실시간 반영되었어요'
+                : 'ABEi 공식 데이터 리포트가 열렸어요'}
             </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-ink/90 p-[1px]">
-              <div
-                className="h-full rounded-full transition-all duration-1000"
-                style={{
-                  width: `${progress}%`,
-                  background: `linear-gradient(90deg, ${t.color}, #FF5500, #00FF66)`,
-                  boxShadow: `0 0 12px ${t.color}`,
-                }}
-              />
+            <div className="mt-0.5 truncate text-[11px] font-semibold text-white/65">
+              {reveal
+                ? `${latest.title} · ABEi ${latest.abei.toFixed(1)} · 가중치 ×${latest.weight.toFixed(2)}`
+                : '지금까지 뛴 매치만큼 레이팅과 플레이스타일 칭호를 받아요'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (reveal) dispatch({ type: 'CLEAR_REVEAL' });
+              setBannerOpen(false);
+            }}
+            className="rounded-full p-1 text-white/40 hover:bg-white/10 hover:text-white"
+            aria-label="닫기"
+          >
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* 3. 레이팅 & 액션 요약 카드 (Image 3의 '캐시 0원 | [내역] [충전]' 카드 구조 반영) */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold text-white/50">공식 레이팅 · 승급 포인트</div>
+            <div className="mt-0.5 flex items-baseline gap-2">
+              <span className="font-bebas text-3xl leading-none text-white">{me.rating} PT</span>
+              <DeltaChip delta={me.lastDelta} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setTab('mymatch'); vibrate(6); }}
+              className="rounded-xl border border-white/10 bg-white/5 px-3.5 py-2 text-xs font-extrabold text-white/80 transition hover:bg-white/10"
+            >
+              기록 내역
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('lobby'); vibrate(6); }}
+              className="rounded-xl bg-neon px-3.5 py-2 text-xs font-extrabold text-black glow-neon transition hover:brightness-110"
+            >
+              매치 신청
+            </button>
+          </div>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 flex justify-between text-[11px] font-extrabold">
+            <span style={{ color: t.color }}>{t.name} ({t.min} PT)</span>
+            <span className="text-neon">{nt ? `다음 티어 [${nt.name}] 승급까지 ${nt.min - me.rating} PT 남음` : '★ 최고 티어 LEGEND 달성'}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-ink/90 p-[1px]">
+            <div
+              className="h-full rounded-full transition-all duration-1000"
+              style={{
+                width: `${progress}%`,
+                background: `linear-gradient(90deg, ${t.color}, #FF5500, #00FF66)`,
+                boxShadow: `0 0 12px ${t.color}`,
+              }}
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* 4. 2026 가을 시즌 & 4분할 주요 지표 그리드 (Image 3 하단 '2026 가을 시즌' 섹션) */}
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-black text-white">2026 가을 시즌</h2>
+          <span className="rounded-full border border-neon/40 bg-neon/10 px-2.5 py-0.5 text-[10px] font-extrabold text-neon">
+            신뢰도 σ {me.sigma.toFixed(2)}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="rounded-2xl border border-white/[.07] bg-ink/70 p-3">
+            <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+              <span>출전 경기</span>
+              <Icon name="Flame" size={13} className="text-brand" />
+            </div>
+            <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
+              {me.totals.gp} <span className="text-sm text-white/40">GAMES</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/[.07] bg-ink/70 p-3">
+            <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+              <span>승-패 (승률%)</span>
+              <Icon name="Trophy" size={13} className="text-neon" />
+            </div>
+            <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
+              {me.totals.wins}승-{me.totals.losses}패 <span className="text-base text-neon">({winRate}%)</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/[.07] bg-ink/70 p-3">
+            <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+              <span>평균 ABEi 효율</span>
+              <Icon name="Gauge" size={13} className="text-[#22D3EE]" />
+            </div>
+            <div className="mt-1.5 font-bebas text-3xl leading-none text-[#22D3EE]">
+              {avgAbei} <span className="text-sm text-white/40">EFF</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/[.07] bg-ink/70 p-3">
+            <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
+              <span>최근 변동 PT</span>
+              <Icon name="TrendingUp" size={13} className={me.lastDelta >= 0 ? 'text-neon' : 'text-red-400'} />
+            </div>
+            <div className={`mt-1.5 font-bebas text-3xl leading-none ${me.lastDelta > 0 ? 'text-neon' : me.lastDelta < 0 ? 'text-red-400' : 'text-white/55'}`}>
+              {me.lastDelta ? `${me.lastDelta > 0 ? '▲ +' : '▼ '}${me.lastDelta} PT` : '— 0 PT'}
             </div>
           </div>
         </div>
       </Card>
 
-      {/* 2. 4분할 주요 지표 그리드: [출전 경기], [승-패 (승률%)], [평균 ABEi 효율], [최근 변동 PT] */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Card className="relative overflow-hidden border border-white/10 p-3.5">
-          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
-            <span>출전 경기</span>
-            <Icon name="Flame" size={13} className="text-brand" />
-          </div>
-          <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
-            {me.totals.gp} <span className="text-sm text-white/40">GAMES</span>
-          </div>
-          <div className="mt-1 text-[10px] font-bold text-white/40">공식 매니저 기록 기준</div>
-        </Card>
-
-        <Card className="relative overflow-hidden border border-white/10 p-3.5">
-          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
-            <span>승-패 (승률%)</span>
-            <Icon name="Trophy" size={13} className="text-neon" />
-          </div>
-          <div className="mt-1.5 font-bebas text-3xl leading-none text-white">
-            {me.totals.wins}승-{me.totals.losses}패 <span className="text-base text-neon">({winRate}%)</span>
-          </div>
-          <div className="mt-1 text-[10px] font-bold text-white/40">시즌 누적 승률</div>
-        </Card>
-
-        <Card className="relative overflow-hidden border border-white/10 p-3.5">
-          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
-            <span>평균 ABEi 효율</span>
-            <Icon name="Gauge" size={13} className="text-[#22D3EE]" />
-          </div>
-          <div className="mt-1.5 font-bebas text-3xl leading-none text-[#22D3EE]">
-            {avgAbei} <span className="text-sm text-white/40">EFF</span>
-          </div>
-          <div className="mt-1 text-[10px] font-bold text-white/40">경기당 농구 효율 지수</div>
-        </Card>
-
-        <Card className="relative overflow-hidden border border-white/10 p-3.5">
-          <div className="flex items-center justify-between text-[11px] font-extrabold text-white/50">
-            <span>최근 변동 PT</span>
-            <Icon name="TrendingUp" size={13} className={me.lastDelta >= 0 ? 'text-neon' : 'text-red-400'} />
-          </div>
-          <div className={`mt-1.5 font-bebas text-3xl leading-none ${me.lastDelta > 0 ? 'text-neon' : me.lastDelta < 0 ? 'text-red-400' : 'text-white/55'}`}>
-            {me.lastDelta ? `${me.lastDelta > 0 ? '▲ +' : '▼ '}${me.lastDelta} PT` : '— 0 PT'}
-          </div>
-          <div className="mt-1 text-[10px] font-bold text-white/40">{latest ? latest.title : '직전 공식 경기 대비'}</div>
-        </Card>
-      </div>
-
-      {/* 3. 6축 육각형 레이더 차트 (RadarChart) */}
+      {/* 5. 6축 육각형 레이더 차트 (RadarChart) */}
       <Card className="p-4">
         <SectionTitle
           icon="Hexagon"
@@ -3630,7 +3960,7 @@ function MyPage() {
         </Card>
       )}
 
-      {/* 4. 칭호(뱃지) 컬렉션 쇼케이스: 획득 칭호는 네온 그린(#00FF66) 활성화, 미획득은 Lock 아이콘 */}
+      {/* 6. 칭호(뱃지) 컬렉션 쇼케이스 */}
       <Card className="p-4">
         <SectionTitle
           icon="Medal"
